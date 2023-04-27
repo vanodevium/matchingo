@@ -1,36 +1,60 @@
 class Trade {
   constructor(tradeOrder, orders = []) {
-    this.setOrder(tradeOrder);
-    this.orders = [];
+    this.order = null;
+    this.isQuote = false;
+    this.amount = 0;
     this.processed = 0;
-    this.processedQuote = 0;
-    orders.map((order) => {
-      this.appendOrder(order);
-    });
-    this.left = this.amount - this.processed;
-    this.leftQuote = this.amount - this.processedQuote;
+    this.left = 0;
+    this.orders = [];
+    this.setOrder(tradeOrder);
+    this.setOrders(orders);
   }
 
   setOrder(order) {
     this.isQuote = order.isQuote();
     this.amount = order.amount;
     this.order = {
-      id: order.ID,
-      price: order.tradePrice,
-      amount: order.tradeAmount,
+      id: order.id,
+      price: order.tradePrice || order.price,
+      isQuote: order.isQuote(),
+      amount: 0,
       role: order.role,
     };
+    order.resetTrade();
+  }
+
+  setOrders(orders = []) {
+    if (!orders || !orders.length) {
+      return;
+    }
+    orders.map((order) => {
+      this.appendOrder(order);
+    });
+    this.calculateLeft();
+    this.unshiftOrder();
   }
 
   appendOrder(order) {
     this.orders.push({
-      id: order.ID,
+      id: order.id,
       price: order.tradePrice,
+      isQuote: order.isQuote(),
       amount: order.tradeAmount,
       role: order.role,
     });
-    this.processed += order.tradeAmount;
-    this.processedQuote += order.tradeAmount * order.tradePrice;
+    this.processed += order.tradeAmount * (this.isQuote ? order.tradePrice : 1);
+    order.resetTrade();
+  }
+
+  unshiftOrder() {
+    if (this.orders.length) {
+      this.orders.unshift(this.order);
+    }
+  }
+
+  calculateLeft() {
+    this.order.amount = this.processed;
+    this.left = this.amount - this.processed;
   }
 }
 

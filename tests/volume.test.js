@@ -1,10 +1,10 @@
 const { test, expect } = require("@jest/globals");
-const { Symbol, SELL, LIMIT, BUY, MARKET } = require("../src/constants");
+const { TestSymbol, SELL, LIMIT, BUY } = require("../src/constants");
 const Volume = require("./../src/volume");
 const { createTestPriceOrder } = require("../src/new-order");
 
 test("hasEnough SELL", function () {
-  const volume = new Volume(Symbol);
+  const volume = new Volume(TestSymbol);
 
   const o11 = createTestPriceOrder(11, LIMIT, SELL, 11, 11);
   const o12 = createTestPriceOrder(12, LIMIT, SELL, 12, 12);
@@ -25,7 +25,7 @@ test("hasEnough SELL", function () {
 });
 
 test("hasEnough BUY", function () {
-  const volume = new Volume(Symbol);
+  const volume = new Volume(TestSymbol);
 
   const o11 = createTestPriceOrder(11, LIMIT, BUY, 11, 11);
   const o12 = createTestPriceOrder(12, LIMIT, BUY, 12, 12);

@@ -1,37 +1,27 @@
 const bench = require("nanobench");
-const Order = require("../src/models/order");
-const { Symbol, BUY, LIMIT } = require("../src/constants");
-const Matcher = require("../src/matcher");
+const assert = require("assert");
+const { TestSymbol, BUY } = require("../src/constants");
+const Matchingo = require("../src/matchingo");
 
-let mss = 0;
+[10_000, 100_000, 1_000_000, 3_000_000].map((iterations) => {
+  bench(`Append ${iterations} new limit orders from array`, function (b) {
+    const matchingo = new Matchingo(TestSymbol);
+    _append(b, 0, iterations, matchingo);
+    assert.ok(
+      matchingo.orderBook.volume.getRaw()[TestSymbol][BUY]["111"] ===
+        iterations * 10
+    );
+  });
+});
 
-function createPriceOrder(type, side, price, amount) {
-  return new Order(type, side, Symbol, price, amount, ++mss);
+function _append(b, start = 0, iterations, matchingo) {
+  const orders = [];
+  for (let i = 0; i < iterations; i++) {
+    orders.push(matchingo.newLimitOrder(++start, BUY, 111, 10));
+  }
+  b.start();
+  orders.map((order) => {
+    matchingo.process(order);
+  });
+  b.end();
 }
-
-bench("Append 10 000 new Limits", function (b) {
-  const matcher = new Matcher(Symbol);
-  b.start();
-  for (let i = 0; i < 10_000; i++) {
-    matcher.match(createPriceOrder(LIMIT, BUY, 111, 10));
-  }
-  b.end();
-});
-
-bench("Append 100 000 new Limits", function (b) {
-  const matcher = new Matcher(Symbol);
-  b.start();
-  for (let i = 0; i < 100_000; i++) {
-    matcher.match(createPriceOrder(LIMIT, BUY, 111, 10));
-  }
-  b.end();
-});
-
-bench("Append 1M new Limits", function (b) {
-  const matcher = new Matcher(Symbol);
-  b.start();
-  for (let i = 0; i < 1_000_000; i++) {
-    matcher.match(createPriceOrder(LIMIT, BUY, 111, 10));
-  }
-  b.end();
-});

@@ -1,8 +1,11 @@
 class Done {
-  constructor(trade, canceled, activated) {
-    this.trade = trade;
-    this.canceled = canceled;
-    this.activated = activated;
+  constructor(trade, canceled = [], activated = []) {
+    this.order = trade.order;
+    this.trades = trade.orders;
+    this.processed = trade.processed;
+    this.left = trade.left;
+    this.canceled = canceled.map((o) => o.getKey());
+    this.activated = activated.map((o) => o.getKey());
   }
 }
 

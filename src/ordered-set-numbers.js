@@ -50,6 +50,10 @@ class OrderedSetNumbers {
   getRaw() {
     return this.numbers;
   }
+
+  getVolume(order) {
+    return this.numbers[order.price] || 0;
+  }
 }
 
 module.exports = OrderedSetNumbers;

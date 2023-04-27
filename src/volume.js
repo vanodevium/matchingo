@@ -1,39 +1,36 @@
-const { sum } = require("lodash");
 const { BUY, SELL } = require("./constants");
 const Numbers = require("./ordered-set-numbers");
 
 class Volume {
   constructor(symbol) {
     this.symbol = symbol;
-    this.volume = {
-      [this.symbol]: {
-        [BUY]: new Numbers("DESC"),
-        [SELL]: new Numbers("ASC"),
-      },
-    };
+    this[SELL] = new Numbers("ASC");
+    this[BUY] = new Numbers("DESC");
   }
 
   increase(order, price, amount) {
     if (order.isMarket()) {
       return;
     }
-    this.volume[this.symbol][order.side].increase(price, amount);
+    return this[order.side].increase(price, amount);
   }
 
   decrease(order, price, amount) {
     if (order.isMarket()) {
       return;
     }
-    this.volume[this.symbol][order.side].decrease(price, amount);
+    return this[order.side].decrease(price, amount);
   }
 
   get(side) {
-    return sum(Object.values(this.volume[this.symbol][side].getRaw()));
+    let sum = 0;
+    Object.values(this[side].getRaw() || {}).forEach((val) => (sum += val));
+    return sum;
   }
 
   hasEnough(side, price, amount) {
-    const volume = this.volume[this.symbol][side].getRaw();
-    const prices = this.volume[this.symbol][side].geyKeys();
+    const volume = this[side].getRaw();
+    const prices = this[side].geyKeys();
 
     if (SELL === side) {
       return this._hasEnough(
@@ -70,11 +67,15 @@ class Volume {
     return accumulator >= amount;
   }
 
+  getVolume(order) {
+    return this[order.side].getVolume(order);
+  }
+
   getRaw() {
     return {
       [this.symbol]: {
-        [BUY]: this.volume[this.symbol][BUY].getRaw(),
-        [SELL]: this.volume[this.symbol][SELL].getRaw(),
+        [BUY]: this[BUY].getRaw(),
+        [SELL]: this[SELL].getRaw(),
       },
     };
   }

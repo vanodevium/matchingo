@@ -4,7 +4,7 @@ class OrdersCollection {
   }
 
   reset() {
-    this.orders = new Set();
+    this.orders.clear();
   }
 
   append(order) {

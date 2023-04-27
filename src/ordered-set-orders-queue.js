@@ -4,59 +4,69 @@ const DenQueue = require("denque");
 class OrderedSetOrdersQueue {
   constructor(sort, key = "price") {
     this.key = key;
-    this.orders = {};
     this.unique = {};
     switch ((sort || "").toLowerCase()) {
       case "asc":
-        this.prices = createTree((a, b) => a - b);
+        this.priceOrdersTreeMap = createTree((a, b) => a - b);
         break;
       case "desc":
-        this.prices = createTree((a, b) => b - a);
+        this.priceOrdersTreeMap = createTree((a, b) => b - a);
         break;
       default:
         throw new Error("set sorting");
     }
   }
 
+  /**
+   * @param {Order} order
+   * @returns {boolean}
+   */
   append(order) {
     if (this.unique[order.getKey()]) {
       return false;
     }
 
+    order.setMaker();
+
     this.unique[order.getKey()] = order;
 
-    const exist = this.orders[order[this.key]];
+    const price = order[this.key];
+    let queue = this.priceOrdersTreeMap.get(price);
 
-    if (exist) {
-      exist.push(order);
-      return true;
+    if (!queue) {
+      queue = new DenQueue();
+      this.priceOrdersTreeMap = this.priceOrdersTreeMap.insert(price, queue);
     }
 
-    const orders = new DenQueue();
-    orders.push(order);
-    this.orders[order[this.key]] = orders;
-    this.prices = this.prices.insert(order[this.key]);
+    queue.push(order);
 
     return true;
   }
 
+  /**
+   * @param {Order} order
+   * @returns {boolean}
+   */
   remove(order) {
     if (!this.unique[order.getKey()]) {
       return false;
     }
 
-    if (this.orders[order[this.key]]) {
-      const orders = this.orders[order[this.key]];
-      for (let index = 0; index < orders.length; index++) {
-        const element = orders.peekAt(index);
-        if (element && element.getKey() === order.getKey()) {
-          orders.removeOne(index);
-          delete this.unique[order.getKey()];
-          if (orders.isEmpty()) {
-            delete this.orders[order[this.key]];
-            this.prices = this.prices.remove(order[this.key]);
-            return true;
-          }
+    const price = order[this.key];
+    const queue = this.priceOrdersTreeMap.get(price);
+
+    if (!queue) {
+      return false;
+    }
+
+    for (let index = 0; index < queue.length; index++) {
+      const element = queue.peekAt(index);
+      if (element && element.getKey() === order.getKey()) {
+        queue.removeOne(index);
+        delete this.unique[order.getKey()];
+        if (queue.isEmpty()) {
+          this.priceOrdersTreeMap = this.priceOrdersTreeMap.remove(price);
+          return true;
         }
       }
     }
@@ -64,23 +74,34 @@ class OrderedSetOrdersQueue {
     return false;
   }
 
+  /**
+   * @param {Order} order
+   * @returns {boolean}
+   */
   fastRemove(order) {
     delete this.unique[order.getKey()];
-    const price = order[this.key];
-    this.orders[price].shift();
-    if (this.orders[price].isEmpty()) {
-      delete this.orders[price];
-      this.prices = this.prices.remove(price);
+    const iter = this.priceOrdersTreeMap.begin;
+    iter.value.shift();
+    if (iter.value.isEmpty()) {
+      iter.remove();
       return true;
     }
 
     return false;
   }
 
+  /**
+   * @param {string|number} key
+   * @returns {Order|boolean}
+   */
   find(key) {
     return this.unique[key] || false;
   }
 
+  /**
+   * @param {string|number} key
+   * @returns {boolean}
+   */
   cancel(key) {
     const order = this.find(key);
     if (order) {
@@ -89,19 +110,24 @@ class OrderedSetOrdersQueue {
     return false;
   }
 
-  getBestQueue() {
-    if (this.prices.length) {
-      return this.orders[this.prices.at(0)?.key] || false;
-    }
-    return false;
+  getBestIterator() {
+    return this.priceOrdersTreeMap.begin;
   }
 
+  /**
+   * @param {Number} price
+   * @returns {DenQueue|Array}
+   */
   getOrders(price) {
-    return this.orders[price] || [];
+    return this.priceOrdersTreeMap.get(price) || [];
   }
 
   getRaw() {
-    return this.orders;
+    const obj = {};
+    this.priceOrdersTreeMap.forEach(function (key, value) {
+      obj[key] = value;
+    });
+    return obj;
   }
 }
 

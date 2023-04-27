@@ -1,8 +1,9 @@
 const Order = require("./order");
+const { STOP_LIMIT } = require("../constants");
 
 class StopLimitOrder extends Order {
-  constructor(type, side, symbol, stop, price, amount, ms) {
-    super(type, side, symbol, price, amount, ms);
+  constructor(symbol, id, side, stop, price, amount) {
+    super(symbol, id, STOP_LIMIT, side, price, amount);
     this.stop = stop;
   }
 }

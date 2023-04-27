@@ -10,25 +10,31 @@ const {
 } = require("../constants");
 
 class Order {
-  constructor(type, side, symbol, price, amount, ms) {
-    this.ID = ms || Date.now();
+  constructor(symbol, id, type, side, price, amount) {
+    this.id = id;
     this.type = type;
     this.side = side;
     this.symbol = symbol;
-    this.price = type === MARKET ? 0 : price;
+    this.price = price;
     this.amount = amount;
+
     this.open_amount = amount;
-    this.ms = ms || Date.now();
-    this.status = "open";
-    this.tradePrice = 0;
-    this.tradeAmount = 0;
+
     this.oco = null;
     this.tif = GTC;
-    this.role = TAKER;
+
+    this.setTaker();
+
+    this.tradePrice = 0;
+    this.tradeAmount = 0;
+
+    this.setAutoStatus();
 
     this.deleted = false;
     this.canceled = false;
     this.activated = false;
+
+    this._isQuote = false;
   }
 
   isMaker() {
@@ -60,11 +66,11 @@ class Order {
   }
 
   isQuote() {
-    return this.isMarket() && this.isBuy();
+    return this._isQuote;
   }
 
   getKey() {
-    return this.ID;
+    return this.id;
   }
 
   oppositeSide() {
@@ -90,7 +96,7 @@ class Order {
     this.tradeAmount += amount;
 
     if (this.open_amount < 0) {
-      throw new Error("open amount is less then zero: " + this.toString());
+      throw new Error("open amount is less then zero: " + JSON.stringify(this));
     }
 
     this.setAutoStatus();
@@ -120,11 +126,25 @@ class Order {
     this.tif = tif;
   }
 
-  setRole(role) {
-    this.role = role;
+  setMaker() {
+    this.role = MAKER;
   }
 
-  getAvailableAmount(amount) {
+  setTaker() {
+    this.role = TAKER;
+  }
+
+  setOCO(id) {
+    this.oco = id;
+  }
+
+  setQuoteMode() {
+    if (this.isMarket()) {
+      this._isQuote = true;
+    }
+  }
+
+  getMaxAmount(amount) {
     if (this.open_amount < amount) {
       return this.open_amount;
     }
@@ -161,6 +181,7 @@ class Order {
   }
 
   activate() {
+    this.type = LIMIT;
     this.activated = true;
   }
 
@@ -168,18 +189,9 @@ class Order {
     return this.activated;
   }
 
-  toString() {
-    return [
-      this.type,
-      this.side,
-      this.symbol,
-      this.price,
-      this.amount,
-      this.open_amount,
-      this.ms,
-      this.status,
-      this.tradePrice,
-    ].join("|");
+  resetTrade() {
+    this.tradeAmount = 0;
+    this.tradePrice = 0;
   }
 }
 
