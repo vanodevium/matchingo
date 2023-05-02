@@ -27,19 +27,18 @@ class StopBook {
   activate(currentPrice) {
     const activated = [];
 
-    const orders = this.orders.priceOrdersTreeMap.get(currentPrice);
+    const orders = this.orders.ordered.get(currentPrice);
     if (!orders) {
       return activated;
     }
 
     let stopLimit;
-    while ((stopLimit = orders.shift())) {
+    while ((stopLimit = orders.popFront())) {
       stopLimit.activate();
       activated.push(stopLimit);
     }
 
-    this.orders.priceOrdersTreeMap =
-      this.orders.priceOrdersTreeMap.remove(currentPrice);
+    this.orders.ordered.remove(currentPrice);
 
     return activated;
   }

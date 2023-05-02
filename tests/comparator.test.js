@@ -1,9 +1,6 @@
 const { test, expect, beforeEach } = require("@jest/globals");
 const Comparator = require("./../src/price-comparator");
-const {
-  createTestPriceOrder,
-  createTestStopLimitPrice,
-} = require("../src/new-order");
+const { createTestPriceOrder } = require("../src/new-order");
 const { MARKET, BUY, SELL, LIMIT } = require("../src/constants");
 let comparator;
 
@@ -39,14 +36,14 @@ test("comparator", function () {
   expect(
     comparator._getLimitLimitPrice(
       createTestPriceOrder("1", LIMIT, BUY, 10, 10),
-      createTestPriceOrder("2", LIMIT, BUY, 11, 10)
-    )
+      createTestPriceOrder("2", LIMIT, BUY, 11, 10),
+    ),
   ).toBe(0);
 
   expect(
     comparator._getLimitLimitPrice(
       createTestPriceOrder("1", LIMIT, BUY, 11, 10),
-      createTestPriceOrder("2", LIMIT, BUY, 10, 10)
-    )
+      createTestPriceOrder("2", LIMIT, BUY, 10, 10),
+    ),
   ).toBe(10);
 });

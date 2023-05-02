@@ -173,7 +173,7 @@ class Matchingo {
         !this.orderBook.volume.hasEnough(
           order.oppositeSide(),
           order.price,
-          order.amount
+          order.amount,
         )
       ) {
         this._cancelOrder(order);
@@ -240,8 +240,8 @@ class Matchingo {
       return;
     }
 
-    let iter = this.orderBook.getBestIterator(order);
-    while (amount > 0 && iter.value) {
+    let iter = this.orderBook.next(order);
+    while (amount > 0 && !iter.done) {
       amount = this._processQueue(iter.key, iter.value, order, amount);
       this.stopBook.activate(iter.key, this.orderBook).map((order) => {
         if (!order.isActivated()) {
@@ -250,7 +250,7 @@ class Matchingo {
         this.add(order);
         this._activated.append(order);
       });
-      iter.next();
+      iter = this.orderBook.next(order);
     }
   }
 
@@ -260,7 +260,7 @@ class Matchingo {
         break;
       }
 
-      const limitOrder = queue.peekFront();
+      const limitOrder = queue.front();
 
       if (this._checkCancelOCO(limitOrder)) {
         this._cancelOrder(limitOrder);
@@ -277,7 +277,7 @@ class Matchingo {
 
       if (order.isQuote()) {
         tradeAmount = limitOrder.getMaxAmount(
-          this._convertQuoteToBase(price, amount)
+          this._convertQuoteToBase(price, amount),
         );
         tradeAmount = this._convertBaseToQuote(price, tradeAmount);
       } else {
@@ -398,7 +398,7 @@ class Matchingo {
     const done = new Done(
       trade,
       this._canceled.toArray(),
-      this._activated.toArray()
+      this._activated.toArray(),
     );
 
     if (this._emit) {
@@ -462,7 +462,7 @@ class Matchingo {
     this.orderBook.volume.decrease(
       order,
       order.price,
-      value || order.tradeAmount || order.amount
+      value || order.tradeAmount || order.amount,
     );
     this._emitVolume(order);
   }

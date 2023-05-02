@@ -12,8 +12,8 @@ class OrderBook {
     this.comparator = new PriceComparator();
   }
 
-  getBestIterator(order) {
-    return this[order.oppositeSide()].getBestIterator();
+  next(order) {
+    return this[order.oppositeSide()].next();
   }
 
   append(order) {

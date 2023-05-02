@@ -129,7 +129,7 @@ test("process: market partial less", function () {
   matchingo.process(o13);
 
   const result = matchingo.process(
-    matchingo.newMarketBuyQuoteOrder(1, 271.1990001)
+    matchingo.newMarketBuyQuoteOrder(1, 271.1990001),
   );
 
   expect(result.order.id).toBe(1);
@@ -146,6 +146,44 @@ test("process: market partial less", function () {
   expect(result1.trades.length).toBe(2);
   expect(result1.processed).toBe(8.250999900000032);
   expect(result1.canceled.length).toBe(1);
+});
+
+test("process: limit sell no trades", function () {
+  const o11 = matchingo.newLimitOrder(11, BUY, 11, 11);
+  const o12 = matchingo.newLimitOrder(12, BUY, 12, 12);
+  const o13 = matchingo.newLimitOrder(13, BUY, 13, 13);
+
+  matchingo.process(o11);
+  matchingo.process(o12);
+  matchingo.process(o13);
+
+  const result = matchingo.process(matchingo.newLimitOrder(1, SELL, 15, 36));
+
+  expect(result.order.id).toBe(1);
+  expect(result.trades.length).toBe(0);
+  expect(result.canceled.length).toBe(0);
+
+  expect(matchingo.orderBook.volume.get(SELL)).toBe(36);
+  expect(matchingo.orderBook.volume.get(BUY)).toBe(36);
+});
+
+test("process: limit buy no trades", function () {
+  const o11 = matchingo.newLimitOrder(11, SELL, 11, 11);
+  const o12 = matchingo.newLimitOrder(12, SELL, 12, 12);
+  const o13 = matchingo.newLimitOrder(13, SELL, 13, 13);
+
+  matchingo.process(o11);
+  matchingo.process(o12);
+  matchingo.process(o13);
+
+  const result = matchingo.process(matchingo.newLimitOrder(1, BUY, 10, 36));
+
+  expect(result.order.id).toBe(1);
+  expect(result.trades.length).toBe(0);
+  expect(result.canceled.length).toBe(0);
+
+  expect(matchingo.orderBook.volume.get(SELL)).toBe(36);
+  expect(matchingo.orderBook.volume.get(BUY)).toBe(36);
 });
 
 test("process: limit fulfilled sell", function () {

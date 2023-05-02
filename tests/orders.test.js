@@ -89,7 +89,7 @@ test("orders: cancel stop limit buy", function () {
 
   expect(matchingo.orderBook.volume.getVolume(o1)).toBe(0);
   expect(Object.keys(matchingo.stopBook.getRaw()[TestSymbol])).toStrictEqual(
-    []
+    [],
   );
 });
 
@@ -108,6 +108,6 @@ test("orders: cancel stop limit sell", function () {
 
   expect(matchingo.orderBook.volume.getVolume(o1)).toBe(0);
   expect(Object.keys(matchingo.stopBook.getRaw()[TestSymbol])).toStrictEqual(
-    []
+    [],
   );
 });

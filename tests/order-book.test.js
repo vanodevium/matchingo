@@ -29,13 +29,13 @@ test("order book: duplicates", function () {
   matchingo.process(createTestPriceOrder(1, LIMIT, BUY, 11, 100));
 
   expect(
-    Object.keys(matchingo.orderBook.getRaw()[TestSymbol][BUY])
+    Object.keys(matchingo.orderBook.getRaw()[TestSymbol][BUY]),
   ).toStrictEqual(["11"]);
 
   Object.values(matchingo.orderBook.getRaw()[TestSymbol][BUY]).forEach(
     (queue) => {
       expect(queue.size()).toBe(1);
-    }
+    },
   );
 });
 
@@ -45,13 +45,13 @@ test("order book: getRaw buy", function () {
   matchingo.process(createTestPriceOrder(3, LIMIT, BUY, 13, 300));
 
   expect(
-    Object.keys(matchingo.orderBook.getRaw()[TestSymbol][BUY])
+    Object.keys(matchingo.orderBook.getRaw()[TestSymbol][BUY]),
   ).toStrictEqual(["11", "12", "13"]);
 
   Object.values(matchingo.orderBook.getRaw()[TestSymbol][BUY]).forEach(
     (queue) => {
       expect(queue.size()).toBe(1);
-    }
+    },
   );
 });
 
@@ -61,11 +61,11 @@ test("order book: getRaw sell", function () {
   matchingo.process(createTestPriceOrder(3, LIMIT, SELL, 13, 300));
 
   expect(
-    Object.keys(matchingo.orderBook.getRaw()[TestSymbol][SELL])
+    Object.keys(matchingo.orderBook.getRaw()[TestSymbol][SELL]),
   ).toStrictEqual(["11", "12", "13"]);
   Object.values(matchingo.orderBook.getRaw()[TestSymbol][SELL]).forEach(
     (queue) => {
       expect(queue.size()).toBe(1);
-    }
+    },
   );
 });

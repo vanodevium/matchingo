@@ -1,16 +1,19 @@
-const createTree = require("functional-red-black-tree");
-const DenQueue = require("denque");
+const { Deque } = require("@js-sdsl/deque");
+const { AscSortedMap, DescSortedMap } = require("./sorted-map");
 
+/**
+ * @property {AscSortedMap|DescSortedMap} ordered
+ */
 class OrderedSetOrdersQueue {
   constructor(sort, key = "price") {
     this.key = key;
     this.unique = {};
     switch ((sort || "").toLowerCase()) {
       case "asc":
-        this.priceOrdersTreeMap = createTree((a, b) => a - b);
+        this.ordered = new AscSortedMap();
         break;
       case "desc":
-        this.priceOrdersTreeMap = createTree((a, b) => b - a);
+        this.ordered = new DescSortedMap();
         break;
       default:
         throw new Error("set sorting");
@@ -31,14 +34,14 @@ class OrderedSetOrdersQueue {
     this.unique[order.getKey()] = order;
 
     const price = order[this.key];
-    let queue = this.priceOrdersTreeMap.get(price);
+    let queue = this.ordered.get(price);
 
     if (!queue) {
-      queue = new DenQueue();
-      this.priceOrdersTreeMap = this.priceOrdersTreeMap.insert(price, queue);
+      queue = new Deque();
+      this.ordered.insert(price, queue);
     }
 
-    queue.push(order);
+    queue.pushBack(order);
 
     return true;
   }
@@ -53,22 +56,17 @@ class OrderedSetOrdersQueue {
     }
 
     const price = order[this.key];
-    const queue = this.priceOrdersTreeMap.get(price);
+    const queue = this.ordered.get(price);
 
     if (!queue) {
       return false;
     }
 
-    for (let index = 0; index < queue.length; index++) {
-      const element = queue.peekAt(index);
-      if (element && element.getKey() === order.getKey()) {
-        queue.removeOne(index);
-        delete this.unique[order.getKey()];
-        if (queue.isEmpty()) {
-          this.priceOrdersTreeMap = this.priceOrdersTreeMap.remove(price);
-          return true;
-        }
-      }
+    queue.eraseElementByValue(order);
+    delete this.unique[order.getKey()];
+    if (!queue.length) {
+      this.ordered.remove(price);
+      return true;
     }
 
     return false;
@@ -80,14 +78,7 @@ class OrderedSetOrdersQueue {
    */
   fastRemove(order) {
     delete this.unique[order.getKey()];
-    const iter = this.priceOrdersTreeMap.begin;
-    iter.value.shift();
-    if (iter.value.isEmpty()) {
-      iter.remove();
-      return true;
-    }
-
-    return false;
+    return this.ordered.fastRemoveFirst();
   }
 
   /**
@@ -110,24 +101,31 @@ class OrderedSetOrdersQueue {
     return false;
   }
 
-  getBestIterator() {
-    return this.priceOrdersTreeMap.begin;
+  /**
+   * @returns {{value: *, done: boolean, key: *}|{value: null, done: boolean, key: null}}
+   */
+  next() {
+    return this.ordered.next();
   }
 
   /**
    * @param {Number} price
-   * @returns {DenQueue|Array}
+   * @returns {Deque|Array}
    */
   getOrders(price) {
-    return this.priceOrdersTreeMap.get(price) || [];
+    return this.ordered.get(price) || [];
   }
 
   getRaw() {
-    const obj = {};
-    this.priceOrdersTreeMap.forEach(function (key, value) {
-      obj[key] = value;
-    });
-    return obj;
+    return this.ordered.values;
+  }
+
+  *[Symbol.iterator]() {
+    for (let price of this.ordered.keys) {
+      for (let order of this.ordered.values[price]) {
+        yield order;
+      }
+    }
   }
 }
 

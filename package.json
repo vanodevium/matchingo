@@ -33,14 +33,12 @@
     "test": "jest"
   },
   "dependencies": {
-    "denque": "2.1.0",
-    "functional-red-black-tree": "1.0.1"
+    "@js-sdsl/deque": "4.4.0"
   },
   "devDependencies": {
-    "@jest/globals": "29.5.0",
-    "@types/functional-red-black-tree": "1.0.2",
-    "jest": "29.5.0",
+    "@jest/globals": "29.6.0",
+    "jest": "29.6.0",
     "nanobench": "3.0.0",
-    "prettier": "2.8.8"
+    "prettier": "3.0.0"
   }
 }

@@ -1,14 +1,17 @@
-const createTree = require("functional-red-black-tree");
+const { AscSortedMap, DescSortedMap } = require("./sorted-map");
 
+/**
+ * @property {AscSortedMap|DescSortedMap} keys
+ */
 class OrderedSetNumbers {
   constructor(sort) {
     this.numbers = {};
     switch ((sort || "").toLowerCase()) {
       case "asc":
-        this.keys = createTree((a, b) => a - b);
+        this.keys = new AscSortedMap();
         break;
       case "desc":
-        this.keys = createTree((a, b) => b - a);
+        this.keys = new DescSortedMap();
         break;
       default:
         throw new Error("set sorting");
@@ -22,7 +25,7 @@ class OrderedSetNumbers {
     } else {
       this.numbers[key] = value;
       if (value) {
-        this.keys = this.keys.insert(key, key);
+        this.keys.insert(key, key);
       }
     }
   }
@@ -38,13 +41,13 @@ class OrderedSetNumbers {
 
       if (this.numbers[key] === 0) {
         delete this.numbers[key];
-        this.keys = this.keys.remove(key);
+        this.keys.remove(key);
       }
     }
   }
 
   geyKeys() {
-    return this.keys;
+    return this.keys.keys;
   }
 
   getRaw() {

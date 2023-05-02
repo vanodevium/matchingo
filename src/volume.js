@@ -38,7 +38,7 @@ class Volume {
         amount,
         prices,
         volume,
-        (bestPrice, orderPrice) => orderPrice >= bestPrice
+        (bestPrice, orderPrice) => orderPrice >= bestPrice,
       );
     }
 
@@ -48,7 +48,7 @@ class Volume {
         amount,
         prices,
         volume,
-        (bestPrice, orderPrice) => orderPrice <= bestPrice
+        (bestPrice, orderPrice) => orderPrice <= bestPrice,
       );
     }
 

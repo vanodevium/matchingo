@@ -1,7 +1,7 @@
-const Trade = require("./../src/models/trade");
-const Done = require("./../src/models/done");
 const { test, expect } = require("@jest/globals");
 const { TestSymbol } = require("../src/constants");
+const Trade = require("./../src/models/trade");
+const Done = require("./../src/models/done");
 const Matchingo = require("./../");
 const matchingo = new Matchingo(TestSymbol);
 
@@ -12,7 +12,7 @@ test("done structure limit no trades", function () {
   const done = new Done(
     trade,
     [matchingo.newLimitOrder("canceled", Matchingo.SELL, 111, 10)],
-    [matchingo.newLimitOrder("activated", Matchingo.SELL, 111, 10)]
+    [matchingo.newLimitOrder("activated", Matchingo.SELL, 111, 10)],
   );
 
   expect(done).toEqual({
@@ -49,7 +49,7 @@ test("done structure limit", function () {
   const done = new Done(
     trade,
     [matchingo.newLimitOrder("canceled", Matchingo.SELL, 111, 10)],
-    [matchingo.newLimitOrder("activated", Matchingo.SELL, 111, 10)]
+    [matchingo.newLimitOrder("activated", Matchingo.SELL, 111, 10)],
   );
 
   expect(done).toEqual({
@@ -129,7 +129,7 @@ test("done structure market", function () {
   const done = new Done(
     trade,
     [matchingo.newLimitOrder("canceled", Matchingo.SELL, 111, 10)],
-    [matchingo.newLimitOrder("activated", Matchingo.SELL, 111, 10)]
+    [matchingo.newLimitOrder("activated", Matchingo.SELL, 111, 10)],
   );
 
   expect(done).toEqual({

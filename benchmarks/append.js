@@ -9,7 +9,7 @@ const Matchingo = require("../src/matchingo");
     _append(b, 0, iterations, matchingo);
     assert.ok(
       matchingo.orderBook.volume.getRaw()[TestSymbol][BUY]["111"] ===
-        iterations * 10
+        iterations * 10,
     );
   });
 });

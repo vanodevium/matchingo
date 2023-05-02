@@ -31,10 +31,12 @@ class Trade {
       this.appendOrder(order);
     });
     this.calculateLeft();
-    this.unshiftOrder();
   }
 
   appendOrder(order) {
+    if (!this.orders.length) {
+      this.orders.push(this.order);
+    }
     this.orders.push({
       id: order.id,
       price: order.tradePrice,
@@ -44,12 +46,6 @@ class Trade {
     });
     this.processed += order.tradeAmount * (this.isQuote ? order.tradePrice : 1);
     order.resetTrade();
-  }
-
-  unshiftOrder() {
-    if (this.orders.length) {
-      this.orders.unshift(this.order);
-    }
   }
 
   calculateLeft() {
