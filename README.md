@@ -75,6 +75,7 @@ npm i matchingo
 - **activated**: array of order IDs which was activated for this processing (**STOP** orders), can be empty
 
 For instance:
+
 ```
 {
     "order": {
@@ -132,7 +133,6 @@ For instance:
 
 - `matchingo.cancel(id: string): bool`
 
-
 ### Events
 
 You can enable **events** mode by passing **true** as second argument, for instance:
@@ -148,18 +148,22 @@ Each event has own type:
 ```
 {"symbol":"BTC/USD","type":"volume","side":"BUY",price":10.111,"volume":10}
 ```
+
 - **depth**: when depth was changed
 ```
 {"symbol":"BTC/USD","type":"depth","depth":{"BTC/USD":{"BUY":{"10.111":10},"SELL":{}}}}
 ```
+
 - **activated**: when was activated some **STOP-LIMIT** order
 ```
 {"symbol":"BTC/USD","type":"activated","id":"activatedOrderID"}
 ```
+
 - **canceled**: when was canceled some order
 ```
 {"symbol":"BTC/USD","type":"canceled","id":"canceledOrderID"}
 ```
+
 - **trade**: when was some trade
 ```
 {"symbol":"BTC/USD","type":"trade","trade":{"id":"order1","price":10.111,"isQuote":false,"amount":10,"role":"MAKER"}}

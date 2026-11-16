@@ -1,14 +1,13 @@
-module.exports = {
-  TestSymbol: "BTC/USD",
-  BUY: "BUY",
-  SELL: "SELL",
-  MARKET: "MARKET",
-  LIMIT: "LIMIT",
-  STOP_LIMIT: "STOP-LIMIT",
-  FOK: "FOK",
-  IOC: "IOC",
-  GTC: "GTC",
-  MARKET_PRICE: 0,
-  TAKER: "TAKER",
-  MAKER: "MAKER",
-};
+export const BUY = 1;
+export const SELL = 2;
+export const MARKET = 10;
+export const LIMIT = 20;
+export const STOP_LIMIT = 30;
+export const FOK = 40;
+export const IOC = 50;
+export const GTC = 60;
+export const MARKET_PRICE = 0;
+export const TAKER = 70;
+export const MAKER = 80;
+export const BUY_KEY = "BUY";
+export const SELL_KEY = "SELL";

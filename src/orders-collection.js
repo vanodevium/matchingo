@@ -1,31 +1,29 @@
-class OrdersCollection {
-  constructor() {
-    this.orders = new Set();
-  }
+export default class OrdersCollection {
+	constructor() {
+		this.orders = new Set();
+	}
 
-  reset() {
-    this.orders.clear();
-  }
+	reset() {
+		this.orders.clear();
+	}
 
-  append(order) {
-    this.orders.add(order);
-  }
+	append(order) {
+		this.orders.add(order);
+	}
 
-  has(order) {
-    return this.orders.has(order);
-  }
+	has(order) {
+		return this.orders.has(order);
+	}
 
-  size() {
-    return this.orders.size;
-  }
+	size() {
+		return this.orders.size;
+	}
 
-  remove(order) {
-    this.orders.delete(order);
-  }
+	remove(order) {
+		this.orders.delete(order);
+	}
 
-  toArray() {
-    return Array.from(this.orders);
-  }
+	toArray() {
+		return Array.from(this.orders);
+	}
 }
-
-module.exports = OrdersCollection;

@@ -1,59 +1,50 @@
-const createTree = require("functional-red-black-tree");
+import { RbMap } from "sonic-forest/lib/red-black/RbMap.js";
 
-class OrderedSetNumbers {
-  constructor(sort) {
-    this.numbers = {};
-    switch ((sort || "").toLowerCase()) {
-      case "asc":
-        this.keys = createTree((a, b) => a - b);
-        break;
-      case "desc":
-        this.keys = createTree((a, b) => b - a);
-        break;
-      default:
-        throw new Error("set sorting");
-    }
-  }
+export default class OrderedSetNumbers {
+	constructor(sort) {
+		this.numbers = Object.create(null);
+		this.keys = new RbMap(
+			(sort || "").toLowerCase() === "asc" ? (a, b) => a - b : (a, b) => b - a,
+		);
+	}
 
-  increase(key, value) {
-    const exist = this.numbers[key];
-    if (exist > 0) {
-      this.numbers[key] = exist + value;
-    } else {
-      this.numbers[key] = value;
-      if (value) {
-        this.keys = this.keys.insert(key, key);
-      }
-    }
-  }
+	increase(key, value) {
+		const exist = this.numbers[key];
+		if (exist > 0) {
+			this.numbers[key] = exist + value;
+		} else {
+			this.numbers[key] = value;
+			if (value) {
+				this.keys.set(key, key);
+			}
+		}
+	}
 
-  decrease(key, value) {
-    const exist = this.numbers[key];
-    if (exist > 0) {
-      this.numbers[key] = exist - value;
+	decrease(key, value) {
+		const exist = this.numbers[key];
+		if (exist > 0) {
+			this.numbers[key] = exist - value;
 
-      if (this.numbers[key] < 0) {
-        throw new Error("minus value problem for key: " + key);
-      }
+			if (this.numbers[key] < 0) {
+				throw new Error(`minus value problem for key: ${key}`);
+			}
 
-      if (this.numbers[key] === 0) {
-        delete this.numbers[key];
-        this.keys = this.keys.remove(key);
-      }
-    }
-  }
+			if (this.numbers[key] === 0) {
+				delete this.numbers[key];
+				this.keys.del(key);
+			}
+		}
+	}
 
-  geyKeys() {
-    return this.keys;
-  }
+	geyKeys() {
+		return this.keys;
+	}
 
-  getRaw() {
-    return this.numbers;
-  }
+	getRaw() {
+		return this.numbers;
+	}
 
-  getVolume(order) {
-    return this.numbers[order.price] || 0;
-  }
+	getVolume(order) {
+		return this.numbers[order.price] || 0;
+	}
 }
-
-module.exports = OrderedSetNumbers;

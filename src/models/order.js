@@ -1,198 +1,175 @@
-const {
-  BUY,
-  SELL,
-  MARKET,
-  LIMIT,
-  STOP_LIMIT,
-  GTC,
-  TAKER,
-  MAKER,
-} = require("../constants");
+import {
+	BUY,
+	GTC,
+	LIMIT,
+	MAKER,
+	MARKET,
+	SELL,
+	STOP_LIMIT,
+	TAKER,
+} from "../constants.js";
 
-class Order {
-  constructor(symbol, id, type, side, price, amount) {
-    this.id = id;
-    this.type = type;
-    this.side = side;
-    this.symbol = symbol;
-    this.price = price;
-    this.amount = amount;
+export default class Order {
+	constructor(symbol, id, type, side, price, amount) {
+		this.id = id;
+		this.type = type;
+		this.side = side;
+		this.symbol = symbol;
+		this.price = price;
+		this.amount = amount;
 
-    this.open_amount = amount;
+		this.open_amount = amount;
 
-    this.oco = null;
-    this.tif = GTC;
+		this.oco = null;
+		this.tif = GTC;
 
-    this.setTaker();
+		this.role = TAKER;
+		this.opposite = side === BUY ? SELL : BUY;
 
-    this.tradePrice = 0;
-    this.tradeAmount = 0;
+		this.tradePrice = 0;
+		this.tradeAmount = 0;
 
-    this.setAutoStatus();
+		this.deleted = false;
+		this.canceled = false;
+		this.activated = false;
 
-    this.deleted = false;
-    this.canceled = false;
-    this.activated = false;
+		this._isQuote = false;
+	}
 
-    this._isQuote = false;
-  }
+	isMaker() {
+		return MAKER === this.role;
+	}
 
-  isMaker() {
-    return MAKER === this.role;
-  }
+	hasSymbol(symbol) {
+		return this.symbol === symbol;
+	}
 
-  hasSymbol(symbol) {
-    return this.symbol === symbol;
-  }
+	isBuy() {
+		return this.side === BUY;
+	}
 
-  isBuy() {
-    return this.side === BUY;
-  }
+	isSell() {
+		return this.side === SELL;
+	}
 
-  isSell() {
-    return this.side === SELL;
-  }
+	isMarket() {
+		return MARKET === this.type;
+	}
 
-  isMarket() {
-    return MARKET === this.type;
-  }
+	isLimit() {
+		return LIMIT === this.type;
+	}
 
-  isLimit() {
-    return LIMIT === this.type;
-  }
+	isStopLimit() {
+		return STOP_LIMIT === this.type;
+	}
 
-  isStopLimit() {
-    return STOP_LIMIT === this.type;
-  }
+	isQuote() {
+		return this._isQuote;
+	}
 
-  isQuote() {
-    return this._isQuote;
-  }
+	getKey() {
+		return this.id;
+	}
 
-  getKey() {
-    return this.id;
-  }
+	oppositeSide() {
+		return this.opposite;
+	}
 
-  oppositeSide() {
-    if (this.isBuy()) {
-      return SELL;
-    }
+	increase(amount, price, isQuote) {
+		if (amount === 0) {
+			return false;
+		}
 
-    if (this.isSell()) {
-      return BUY;
-    }
-  }
+		if (this._isQuote || isQuote) {
+			amount = amount / price;
+		}
 
-  increase(amount, price, isQuote) {
-    if (amount === 0) {
-      return false;
-    }
+		this.open_amount -= amount;
+		this.tradeAmount += amount;
 
-    if (this.isQuote() || isQuote) {
-      amount = amount / price;
-    }
+		if (this.open_amount < 0) {
+			throw new Error(`open amount is less then zero: ${JSON.stringify(this)}`);
+		}
 
-    this.open_amount -= amount;
-    this.tradeAmount += amount;
+		if (this.open_amount > this.amount) {
+			throw new Error("open_amount is greater than amount");
+		}
 
-    if (this.open_amount < 0) {
-      throw new Error("open amount is less then zero: " + JSON.stringify(this));
-    }
+		if (this.open_amount === this.amount) {
+			this.status = "open";
+		} else if (this.amount > this.open_amount) {
+			this.status = this.open_amount === 0 ? "fulfilled" : "partial";
+		}
 
-    this.setAutoStatus();
+		return true;
+	}
 
-    return true;
-  }
+	setTIF(tif) {
+		this.tif = tif;
+	}
 
-  setAutoStatus() {
-    if (this.open_amount > this.amount) {
-      throw new Error("open_amount is greater than amount");
-    }
+	setMaker() {
+		this.role = MAKER;
+	}
 
-    if (this.isOpen()) {
-      this.status = "open";
-    }
+	setTaker() {
+		this.role = TAKER;
+	}
 
-    if (this.isPartial()) {
-      if (this.isFulfilled()) {
-        this.status = "fulfilled";
-      } else {
-        this.status = "partial";
-      }
-    }
-  }
+	setOCO(id) {
+		this.oco = id;
+	}
 
-  setTIF(tif) {
-    this.tif = tif;
-  }
+	setQuoteMode() {
+		if (this.type === MARKET) {
+			this._isQuote = true;
+		}
+	}
 
-  setMaker() {
-    this.role = MAKER;
-  }
+	getMaxAmount(amount) {
+		return Math.min(this.open_amount, amount);
+	}
 
-  setTaker() {
-    this.role = TAKER;
-  }
+	isFulfilled() {
+		return 0 === this.open_amount;
+	}
 
-  setOCO(id) {
-    this.oco = id;
-  }
+	isOpen() {
+		return this.amount === this.open_amount;
+	}
 
-  setQuoteMode() {
-    if (this.isMarket()) {
-      this._isQuote = true;
-    }
-  }
+	isPartial() {
+		return this.amount > this.open_amount;
+	}
 
-  getMaxAmount(amount) {
-    if (this.open_amount < amount) {
-      return this.open_amount;
-    }
+	cancel() {
+		this.canceled = true;
+	}
 
-    return amount;
-  }
+	isCanceled() {
+		return this.canceled;
+	}
 
-  isFulfilled() {
-    return 0 === this.open_amount;
-  }
+	delete() {
+		this.deleted = true;
+	}
 
-  isOpen() {
-    return this.amount === this.open_amount;
-  }
+	isDeleted() {
+		return this.deleted;
+	}
 
-  isPartial() {
-    return this.amount > this.open_amount;
-  }
+	activate() {
+		this.type = LIMIT;
+		this.activated = true;
+	}
 
-  cancel() {
-    this.canceled = true;
-  }
+	isActivated() {
+		return this.activated;
+	}
 
-  isCanceled() {
-    return this.canceled;
-  }
-
-  delete() {
-    this.deleted = true;
-  }
-
-  isDeleted() {
-    return this.deleted;
-  }
-
-  activate() {
-    this.type = LIMIT;
-    this.activated = true;
-  }
-
-  isActivated() {
-    return this.activated;
-  }
-
-  resetTrade() {
-    this.tradeAmount = 0;
-    this.tradePrice = 0;
-  }
+	resetTrade() {
+		this.tradeAmount = 0;
+		this.tradePrice = 0;
+	}
 }
-
-module.exports = Order;

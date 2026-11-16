@@ -1,61 +1,59 @@
-const OrderedOrders = require("./ordered-set-orders-queue");
+import OrderedOrders from "./ordered-set-orders-queue.js";
 
-class StopBook {
-  constructor(symbol) {
-    this.symbol = symbol;
-    this.orders = new OrderedOrders("ASC", "stop");
-  }
+export default class StopBook {
+	constructor(symbol) {
+		this.symbol = symbol;
+		this.orders = new OrderedOrders("ASC", "stop");
+	}
 
-  getRaw() {
-    return {
-      [this.symbol]: this.orders.getRaw(),
-    };
-  }
+	getRaw() {
+		return {
+			[this.symbol]: this.orders.getRaw(),
+		};
+	}
 
-  getOrders(symbol, price) {
-    return this.orders.getOrders(price);
-  }
+	getOrders(_symbol, price) {
+		return this.orders.getOrders(price);
+	}
 
-  append(order) {
-    this.orders.append(order);
-  }
+	append(order) {
+		this.orders.append(order);
+	}
 
-  remove(order) {
-    return this.orders.remove(order);
-  }
+	remove(order) {
+		return this.orders.remove(order);
+	}
 
-  activate(currentPrice) {
-    const activated = [];
+	activate(currentPrice) {
+		const activated = [];
 
-    const orders = this.orders.priceOrdersTreeMap.get(currentPrice);
-    if (!orders) {
-      return activated;
-    }
+		const orders = this.orders.priceOrdersTreeMap.get(currentPrice);
+		if (!orders) {
+			return activated;
+		}
 
-    let stopLimit;
-    while ((stopLimit = orders.shift())) {
-      stopLimit.activate();
-      activated.push(stopLimit);
-    }
+		let stopLimit = orders.shift();
+		while (stopLimit) {
+			stopLimit.activate();
+			activated.push(stopLimit);
+			stopLimit = orders.shift();
+		}
 
-    this.orders.priceOrdersTreeMap =
-      this.orders.priceOrdersTreeMap.remove(currentPrice);
+		this.orders.priceOrdersTreeMap.del(currentPrice);
 
-    return activated;
-  }
+		return activated;
+	}
 
-  cancel(key) {
-    const order = this.orders.find(key);
-    if (order) {
-      this.orders.cancel(key);
-      return order;
-    }
-    return false;
-  }
+	cancel(key) {
+		const order = this.orders.find(key);
+		if (order) {
+			this.orders.cancel(key);
+			return order;
+		}
+		return false;
+	}
 
-  find(key) {
-    return this.orders.find(key);
-  }
+	find(key) {
+		return this.orders.find(key);
+	}
 }
-
-module.exports = StopBook;

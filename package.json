@@ -1,46 +1,49 @@
 {
-  "name": "matchingo",
-  "version": "0.0.1",
-  "description": "Incredibly fast matching engine for HFT (high-frequency trading) written in JS",
-  "keywords": [
-    "orderbook",
-    "trading",
-    "trade",
-    "market",
-    "limit",
-    "order",
-    "orders",
-    "match",
-    "matching"
-  ],
-  "homepage": "https://github.com/vanodevium/matchingo#readme",
-  "bugs": {
-    "url": "https://github.com/vanodevium/matchingo/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+ssh://git@github.com/vanodevium/matchingo.git"
-  },
-  "license": "MIT",
-  "author": {
-    "name": "Vano Devium",
-    "email": "vano@devium.me",
-    "url": "https://www.devium.me/"
-  },
-  "main": "index.js",
-  "scripts": {
-    "fix": "prettier --write src tests benchmarks examples index.js",
-    "test": "jest"
-  },
-  "dependencies": {
-    "denque": "2.1.0",
-    "functional-red-black-tree": "1.0.1"
-  },
-  "devDependencies": {
-    "@jest/globals": "29.5.0",
-    "@types/functional-red-black-tree": "1.0.2",
-    "jest": "29.5.0",
-    "nanobench": "3.0.0",
-    "prettier": "2.8.8"
-  }
+	"name": "matchingo",
+	"version": "0.0.1",
+	"description": "Incredibly fast matching engine for HFT (high-frequency trading) written in JS",
+	"keywords": [
+		"orderbook",
+		"trading",
+		"trade",
+		"market",
+		"limit",
+		"order",
+		"orders",
+		"match",
+		"matching"
+	],
+	"homepage": "https://github.com/vanodevium/matchingo#readme",
+	"bugs": {
+		"url": "https://github.com/vanodevium/matchingo/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+ssh://git@github.com/vanodevium/matchingo.git"
+	},
+	"license": "MIT",
+	"author": {
+		"name": "Vano Devium",
+		"email": "vano@devium.me",
+		"url": "https://www.devium.me/"
+	},
+	"type": "module",
+	"main": "index.js",
+	"scripts": {
+		"fix": "prettier --write src tests benchmarks examples index.js && biome check --write",
+		"test": "vitest run"
+	},
+	"allowScripts": {
+		"fsevents": true
+	},
+	"dependencies": {
+		"denque": "2.1.0",
+		"sonic-forest": "1.5.0"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.6.8",
+		"mitata": "1.0.34",
+		"prettier": "2.8.8",
+		"vitest": "5.1.0"
+	}
 }

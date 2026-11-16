@@ -1,11 +1,9 @@
-const Order = require("./order");
-const { STOP_LIMIT } = require("../constants");
+import { STOP_LIMIT } from "../constants.js";
+import Order from "./order.js";
 
-class StopLimitOrder extends Order {
-  constructor(symbol, id, side, stop, price, amount) {
-    super(symbol, id, STOP_LIMIT, side, price, amount);
-    this.stop = stop;
-  }
+export default class StopLimitOrder extends Order {
+	constructor(symbol, id, side, stop, price, amount) {
+		super(symbol, id, STOP_LIMIT, side, price, amount);
+		this.stop = stop;
+	}
 }
-
-module.exports = StopLimitOrder;

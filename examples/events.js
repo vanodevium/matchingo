@@ -1,9 +1,9 @@
-const Matchingo = require("../index");
+import Matchingo from "../index.js";
 
 const matchingo = new Matchingo("BTC/USD", true);
 
 matchingo.emitter.on("BTC/USD", (event) => {
-  console.log(JSON.stringify(event));
+	console.log(JSON.stringify(event));
 });
 
 const order1 = matchingo.newLimitOrder("order1", Matchingo.BUY, 10.111, 10);

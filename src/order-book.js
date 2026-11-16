@@ -1,58 +1,56 @@
-const { SELL, BUY } = require("./constants");
-const OrderedOrders = require("./ordered-set-orders-queue");
-const Volume = require("./volume");
-const PriceComparator = require("./price-comparator");
+import { BUY, BUY_KEY, SELL, SELL_KEY } from "./constants.js";
+import OrderedOrders from "./ordered-set-orders-queue.js";
+import PriceComparator from "./price-comparator.js";
+import Volume from "./volume.js";
 
-class OrderBook {
-  constructor(symbol) {
-    this.symbol = symbol;
-    this[SELL] = new OrderedOrders("ASC", "price");
-    this[BUY] = new OrderedOrders("DESC", "price");
-    this.volume = new Volume(this.symbol);
-    this.comparator = new PriceComparator();
-  }
+export default class OrderBook {
+	constructor(symbol) {
+		this.symbol = symbol;
+		this[SELL] = new OrderedOrders("ASC", "price");
+		this[BUY] = new OrderedOrders("DESC", "price");
+		this.volume = new Volume(this.symbol);
+		this.comparator = new PriceComparator();
+	}
 
-  getBestIterator(order) {
-    return this[order.oppositeSide()].getBestIterator();
-  }
+	getBestIterator(order) {
+		return this[order.oppositeSide()].getBestIterator();
+	}
 
-  append(order) {
-    if (order.isMarket()) {
-      throw new Error("MARKET can not be appended to the order book");
-    }
-    return this[order.side].append(order);
-  }
+	append(order) {
+		if (order.type === 10) {
+			throw new Error("MARKET can not be appended to the order book");
+		}
+		return this[order.side].append(order);
+	}
 
-  remove(order) {
-    if (order.isMarket()) {
-      return false;
-    }
-    return this[order.side].remove(order);
-  }
+	remove(order) {
+		if (order.type === 10) {
+			return false;
+		}
+		return this[order.side].remove(order);
+	}
 
-  fastRemove(order) {
-    if (order.isMarket()) {
-      return false;
-    }
-    return this[order.side].fastRemove(order);
-  }
+	fastRemove(order) {
+		if (order.type === 10) {
+			return false;
+		}
+		return this[order.side].fastRemove(order);
+	}
 
-  find(key) {
-    return this[SELL].find(key) || this[BUY].find(key);
-  }
+	find(key) {
+		return this[SELL].find(key) || this[BUY].find(key);
+	}
 
-  cancel(key) {
-    return this[SELL].cancel(key) || this[BUY].cancel(key);
-  }
+	cancel(key) {
+		return this[SELL].cancel(key) || this[BUY].cancel(key);
+	}
 
-  getRaw() {
-    return {
-      [this.symbol]: {
-        [SELL]: this[SELL].getRaw(),
-        [BUY]: this[BUY].getRaw(),
-      },
-    };
-  }
+	getRaw() {
+		return {
+			[this.symbol]: {
+				[BUY_KEY]: this[BUY].getRaw(),
+				[SELL_KEY]: this[SELL].getRaw(),
+			},
+		};
+	}
 }
-
-module.exports = OrderBook;

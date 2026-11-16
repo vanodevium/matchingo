@@ -1,1 +1,1 @@
-module.exports = require("./src/matchingo");
+export { default } from "./src/matchingo.js";

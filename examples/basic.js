@@ -1,4 +1,4 @@
-const Matchingo = require("../index");
+import Matchingo from "../index.js";
 
 const matchingo = new Matchingo("BTC/USD");
 
