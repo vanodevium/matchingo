@@ -1,11 +1,11 @@
 import DenQueue from "denque";
-import { RbMap } from "sonic-forest/lib/red-black/RbMap.js";
+import { SkipList } from "./skip-list.js";
 
 export default class OrderedSetOrdersQueue {
 	constructor(sort, key = "price") {
 		this.key = key;
 		this.unique = Object.create(null);
-		this.priceOrdersTreeMap = new RbMap(
+		this.priceOrdersTreeMap = new SkipList(
 			(sort || "").toLowerCase() === "asc" ? (a, b) => a - b : (a, b) => b - a,
 		);
 	}

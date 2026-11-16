@@ -1,9 +1,9 @@
-import { RbMap } from "sonic-forest/lib/red-black/RbMap.js";
+import { SkipList } from "./skip-list.js";
 
 export default class OrderedSetNumbers {
 	constructor(sort) {
 		this.numbers = Object.create(null);
-		this.keys = new RbMap(
+		this.keys = new SkipList(
 			(sort || "").toLowerCase() === "asc" ? (a, b) => a - b : (a, b) => b - a,
 		);
 	}
