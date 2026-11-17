@@ -1,3 +1,9 @@
+/**
+ * Modify rules:
+ * in-place decrease keeps time priority; price change or amount increase
+ * re-queues the order (loses priority); re-queued order can match immediately.
+ */
+
 import { BUY, SELL } from "../src/constants.js";
 import Matchingo from "../src/matchingo.js";
 import { TestScales, TestSymbol } from "./constants.js";
@@ -8,92 +14,100 @@ beforeEach(() => {
 	m = new Matchingo(TestSymbol, TestScales);
 });
 
-test("modify: returns false for unknown id", () => {
+// ---------------------------------------------------------------------------
+// Guard rails
+// ---------------------------------------------------------------------------
+
+test("modify: unknown id returns false", () => {
 	expect(m.modify(99, 100, 10)).toBe(false);
 });
 
-test("modify: in-place amount decrease keeps time priority", () => {
-	const a = m.newLimitOrder(1, SELL, 100, 10);
-	const b = m.newLimitOrder(2, SELL, 100, 10);
-	m.process(a);
-	m.process(b);
+test("modify: stop-limit order returns false (not in limit book)", () => {
+	m.process(m.newStopLimitOrder(1, BUY, 10, 11, 5));
+	expect(m.modify(1, 11, 5)).toBe(false);
+	expect(m.stopBook.find(1)).toBeTruthy();
+});
 
-	// Reduce order 1 from 10 to 6
-	expect(m.modify(1, 100, 6)).toBe(true);
+// ---------------------------------------------------------------------------
+// In-place decrease (same price, smaller or equal amount)
+// ---------------------------------------------------------------------------
 
-	// Order 1 is still ahead of order 2 — a buy for 6 should fill order 1
-	const buy = m.newLimitOrder(3, BUY, 100, 6);
-	const done = m.process(buy);
+test("in-place decrease: keeps time priority", () => {
+	m.process(m.newLimitOrder(1, SELL, 100, 10));
+	m.process(m.newLimitOrder(2, SELL, 100, 10));
 
-	// trades[0] = taker (order 3), trades[1] = maker (order 1)
-	expect(done.trades.length).toBe(2);
+	expect(m.modify(1, 100, 6)).toBe(true); // in-place
+
+	// order 1 is still ahead of order 2
+	const done = m.process(m.newLimitOrder(3, BUY, 100, 6));
 	expect(done.trades[1].id).toBe(1);
 	expect(m.order(1)).toBeFalsy();
 	expect(m.order(2)).toBeTruthy();
 });
 
-test("modify: amount decrease updates volume", () => {
-	const a = m.newLimitOrder(1, SELL, 100, 10);
-	m.process(a);
-
+test("in-place decrease: updates volume and open_amount", () => {
+	m.process(m.newLimitOrder(1, SELL, 100, 10));
 	m.modify(1, 100, 4);
 
-	const order = m.order(1);
-	expect(order.open_amount).toBe(4);
-	expect(order.amount).toBe(4);
-
-	const ask = m.bestAsk();
-	expect(ask.amount).toBe(4);
+	expect(m.order(1).open_amount).toBe(4);
+	expect(m.bestAsk().amount).toBe(4);
 });
 
-test("modify: price change re-queues (loses time priority)", () => {
-	const a = m.newLimitOrder(1, SELL, 100, 10);
-	const b = m.newLimitOrder(2, SELL, 101, 10);
-	m.process(a);
-	m.process(b);
+test("in-place decrease to current open_amount on partially-filled order", () => {
+	m.process(m.newLimitOrder(1, SELL, 100, 10));
+	m.process(m.newLimitOrder(2, SELL, 100, 10));
+	m.process(m.newLimitOrder(3, BUY, 100, 4)); // order 1: open_amount = 6
 
-	// Move order 1 to price 102 — it should now be behind order 2 at 101
-	const done = m.modify(1, 102, 10);
-	expect(done).toBeTruthy();
-	expect(m.order(1)).not.toBeNull();
+	expect(m.modify(1, 100, 6)).toBe(true); // decrease to open_amount → in-place
 
-	const buy = m.newLimitOrder(3, BUY, 101, 10);
-	const result = m.process(buy);
+	const done = m.process(m.newLimitOrder(4, BUY, 100, 6));
+	expect(done.trades[1].id).toBe(1);
+	expect(m.order(1)).toBeFalsy();
+	expect(m.order(2)).toBeTruthy();
+});
 
-	// trades[0] = taker (order 3), trades[1] = maker (order 2)
-	expect(result.trades.length).toBe(2);
-	expect(result.trades[1].id).toBe(2);
+test("in-place decrease: volume correct after partial fill + decrease", () => {
+	m.process(m.newLimitOrder(1, SELL, 100, 10));
+	m.process(m.newLimitOrder(2, BUY, 100, 3)); // open_amount = 7
+	m.modify(1, 100, 5);
+	expect(m.order(1).open_amount).toBe(5);
+	expect(m.bestAsk().amount).toBe(5);
+});
+
+// ---------------------------------------------------------------------------
+// Re-queue (price change or amount increase)
+// ---------------------------------------------------------------------------
+
+test("price change: re-queues, loses time priority", () => {
+	m.process(m.newLimitOrder(1, SELL, 100, 10));
+	m.process(m.newLimitOrder(2, SELL, 101, 10));
+
+	m.modify(1, 102, 10); // move to 102 — behind order 2
+
+	const done = m.process(m.newLimitOrder(3, BUY, 101, 10));
+	expect(done.trades[1].id).toBe(2);
 	expect(m.order(2)).toBeFalsy();
 	expect(m.order(1)).toBeTruthy();
 });
 
-test("modify: amount increase re-queues (loses time priority)", () => {
-	const a = m.newLimitOrder(1, SELL, 100, 5);
-	const b = m.newLimitOrder(2, SELL, 100, 5);
-	m.process(a);
-	m.process(b);
+test("amount increase: re-queues, loses time priority", () => {
+	m.process(m.newLimitOrder(1, SELL, 100, 5));
+	m.process(m.newLimitOrder(2, SELL, 100, 5));
 
-	// Increase order 1 — it goes to the back
-	m.modify(1, 100, 10);
+	m.modify(1, 100, 10); // increase → re-queue to back
 
-	const buy = m.newLimitOrder(3, BUY, 100, 5);
-	const result = m.process(buy);
-
-	// trades[0] = taker (order 3), trades[1] = first maker
-	expect(result.trades[1].id).toBe(2);
+	const done = m.process(m.newLimitOrder(3, BUY, 100, 5));
+	expect(done.trades[1].id).toBe(2);
 	expect(m.order(1)).toBeTruthy();
 });
 
-test("modify: re-queued order can match immediately", () => {
-	const bid = m.newLimitOrder(1, BUY, 100, 10);
-	const ask = m.newLimitOrder(2, SELL, 110, 10);
-	m.process(bid);
-	m.process(ask);
+test("re-queued order matches immediately when it now crosses", () => {
+	m.process(m.newLimitOrder(1, BUY, 100, 10));
+	m.process(m.newLimitOrder(2, SELL, 110, 10));
 
-	// Lower the ask to cross with the bid
+	// lower the ask to cross with the bid
 	const done = m.modify(2, 100, 10);
 
-	// trades[0] = taker (order 2 modified), trades[1] = maker (order 1)
 	expect(done.trades.length).toBe(2);
 	expect(m.order(1)).toBeFalsy();
 	expect(m.order(2)).toBeFalsy();

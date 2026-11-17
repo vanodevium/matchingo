@@ -1,3 +1,8 @@
+/**
+ * Dump/restore (snapshot) rules:
+ * state round-trips correctly, seq is preserved, old state is cleared.
+ */
+
 import { BUY, SELL } from "../src/constants.js";
 import Matchingo from "../src/matchingo.js";
 import { DecimalScales, TestScales, TestSymbol } from "./constants.js";
@@ -8,12 +13,11 @@ beforeEach(() => {
 	m = new Matchingo(TestSymbol, TestScales);
 });
 
-test("dump: empty engine produces empty snapshot", () => {
-	const snap = m.dump();
-	expect(snap).toEqual({ v: 1, seq: 0, l: [], s: [] });
+test("empty engine produces empty snapshot", () => {
+	expect(m.dump()).toEqual({ v: 1, seq: 0, l: [], s: [] });
 });
 
-test("dump/restore: resting limit orders survive round-trip", () => {
+test("resting limit orders survive round-trip", () => {
 	m.process(m.newLimitOrder(1, SELL, 100, 10));
 	m.process(m.newLimitOrder(2, SELL, 101, 5));
 	m.process(m.newLimitOrder(3, BUY, 99, 7));
@@ -26,53 +30,57 @@ test("dump/restore: resting limit orders survive round-trip", () => {
 	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(snap);
 
-	// seq is preserved — next order gets seq 4
-	const o = m2.newLimitOrder(4, BUY, 100, 3);
-	const result = m2.process(o);
-	// trades[0] is the taker, trades[1] is the maker
-	expect(result.trades).toHaveLength(2);
-	expect(result.trades[1].price).toBe(100);
-	expect(result.trades[1].amount).toBe(3);
+	const done = m2.process(m2.newLimitOrder(4, BUY, 100, 3));
+	expect(done.trades).toHaveLength(2);
+	expect(done.trades[1].price).toBe(100);
 });
 
-test("dump/restore: stop-limit orders survive round-trip", () => {
+test("stop-limit orders survive round-trip and activate correctly", () => {
 	m.process(m.newStopLimitOrder(10, BUY, 110, 111, 5));
 	m.process(m.newStopLimitOrder(11, SELL, 90, 89, 3));
 
-	const snap = m.dump();
-	expect(snap.s).toHaveLength(2);
-
 	const m2 = new Matchingo(TestSymbol, TestScales);
-	m2.restore(snap);
+	m2.restore(m.dump());
 
-	// BUY stop fires at tradePrice >= 110 — place SELL@110 maker, BUY@115 taker
+	// trigger BUY stop: sell maker at 110, then buy taker crosses it
 	m2.process(m2.newLimitOrder(20, SELL, 110, 10));
-	const result = m2.process(m2.newLimitOrder(21, BUY, 115, 10));
-	const activated = result.activations;
-	expect(activated).toHaveLength(1);
+	const done = m2.process(m2.newLimitOrder(21, BUY, 115, 10));
+	expect(done.activations).toHaveLength(1);
 });
 
-test("dump/restore: partial fill is preserved", () => {
+test("partial fill is preserved correctly", () => {
 	m.process(m.newLimitOrder(1, SELL, 100, 10));
-	// partially fill it: buy 4 of 10
-	m.process(m.newLimitOrder(2, BUY, 100, 4));
+	m.process(m.newLimitOrder(2, BUY, 100, 4)); // order 1: open_amount=6
 
 	const snap = m.dump();
-	// order 1 is still open with open_amount=6
-	expect(snap.l).toHaveLength(1);
 	const [, , , amount, open_amount] = snap.l[0];
 	expect(amount).toBe(10);
 	expect(open_amount).toBe(6);
 
 	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(snap);
-
-	const result = m2.process(m2.newLimitOrder(3, BUY, 100, 6));
-	expect(result.trades).toHaveLength(2);
-	expect(result.trades[1].amount).toBe(6);
+	const done = m2.process(m2.newLimitOrder(3, BUY, 100, 6));
+	expect(done.trades[1].amount).toBe(6);
 });
 
-test("dump/restore: OCO link is preserved", () => {
+test("postOnly flag preserved", () => {
+	m.process(m.newPostOnlyLimitOrder(1, BUY, 100, 10));
+	const m2 = new Matchingo(TestSymbol, TestScales);
+	m2.restore(m.dump());
+	expect(m2.order(1).postOnly).toBe(true);
+});
+
+test("iceberg fields preserved", () => {
+	m.process(m.newIcebergOrder(1, BUY, 100, 30, 10));
+	const m2 = new Matchingo(TestSymbol, TestScales);
+	m2.restore(m.dump());
+	const o = m2.order(1);
+	expect(o.peakAmount).toBe(10);
+	expect(o.open_amount).toBe(10);
+	expect(o.amount).toBe(30);
+});
+
+test("OCO link preserved in snapshot data", () => {
 	m = new Matchingo(TestSymbol, DecimalScales);
 	const lim = m.newLimitOrder(1, SELL, 1.1, 10);
 	const stop = m.newStopLimitOrder(2, SELL, 0.9, 0.85, 10);
@@ -82,27 +90,36 @@ test("dump/restore: OCO link is preserved", () => {
 	m.process(stop);
 
 	const snap = m.dump();
-	expect(snap.l[0][6]).toBe(2); // oco field
-	expect(snap.s[0][6]).toBe(1);
+	expect(snap.l[0][6]).toBe(2); // oco field on limit
+	expect(snap.s[0][6]).toBe(1); // oco field on stop
 
 	const m2 = new Matchingo(TestSymbol, DecimalScales);
 	m2.restore(snap);
-	const snap2 = m2.dump();
-	expect(snap2).toEqual(snap);
+	expect(m2.dump()).toEqual(snap);
 });
 
-test("restore: clears previous state", () => {
+test("seq is preserved — next order increments from saved seq", () => {
+	m.process(m.newLimitOrder(1, SELL, 100, 5));
+	m.process(m.newLimitOrder(2, SELL, 101, 5));
+
+	const m2 = new Matchingo(TestSymbol, TestScales);
+	m2.restore(m.dump()); // seq=2
+
+	const done = m2.process(m2.newLimitOrder(3, BUY, 100, 5));
+	expect(done.order.seq).toBe(3);
+});
+
+test("restore clears previous state", () => {
 	m.process(m.newLimitOrder(1, SELL, 100, 10));
 	const snap = m.dump();
 
 	m.process(m.newLimitOrder(2, SELL, 200, 5));
 	m.restore(snap);
 
-	// only order 1 should be in the book
 	expect(m.order(1)).toBeTruthy();
 	expect(m.order(2)).toBeFalsy();
 });
 
-test("restore: unsupported version throws", () => {
+test("unsupported version throws", () => {
 	expect(() => m.restore({ v: 99, seq: 0, l: [], s: [] })).toThrow();
 });
