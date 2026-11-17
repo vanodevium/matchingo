@@ -226,43 +226,75 @@ You can enable **events** mode by passing **true** as second argument, for insta
 
 ```
 const matchingo = new Matchingo("BTC/USD", true, { priceScale: 3, amountScale: 3 });
-matchingo.emitter.on("BTC/USD", (header, data) => {})
+matchingo.emitter.on("BTC/USD", (event) => {})
 ```
 
-The event name is the symbol. The listener gets two arguments: `header` (`symbol` and `type`) and `data`.
+The event name is the symbol. The listener receives a single object that always contains `symbol` and `type`, plus the event-specific fields described below.
 Side and role values are numbers (`1` BUY, `2` SELL, `70` TAKER, `80` MAKER).
 
-Each event has own type:
+#### Event types
 
-- **volume**: when volume for some price was changed
+- **volume** — fired whenever the resting volume at a price level changes (order added, matched, or canceled)
 
-```
-{"symbol":"BTC/USD","type":"volume"} {"side":1,"price":10.111,"volume":10}
-```
-
-- **depth**: when `depth()` is called
-
-```
-{"symbol":"BTC/USD","type":"depth"} {"depth":{"BTC/USD":{"1":{"10.111":10},"2":{}}}}
-```
-
-- **activated**: when was activated some **STOP-LIMIT** order
-
-```
-{"symbol":"BTC/USD","type":"activated"} {"id":"activatedOrderID"}
+```json
+{
+	"symbol": "BTC/USD",
+	"type": "volume",
+	"side": 1,
+	"price": 10.111,
+	"volume": 10
+}
 ```
 
-- **canceled**: when was canceled some order
+Fields: `side` (1 BUY / 2 SELL), `price`, `volume` (total resting amount at that price after the change; `0` means the level is gone).
 
-```
-{"symbol":"BTC/USD","type":"canceled"} {"id":"canceledOrderID"}
+- **depth** — fired when `depth()` is called
+
+```json
+{
+	"symbol": "BTC/USD",
+	"type": "depth",
+	"depth": { "BTC/USD": { "1": { "10.111": 10 }, "2": {} } }
+}
 ```
 
-- **trade**: when was some trade
+Fields: `depth` — the full depth snapshot (same object `depth()` returns).
 
+- **trade** — fired once per matched order (taker and each maker get their own event)
+
+```json
+{
+	"symbol": "BTC/USD",
+	"type": "trade",
+	"trade": {
+		"id": "order1",
+		"price": 10.111,
+		"isQuote": false,
+		"amount": 10,
+		"role": 80,
+		"seq": 1,
+		"timestamp": 1794915538120
+	}
+}
 ```
-{"symbol":"BTC/USD","type":"trade"} {"trade":{"id":"order1","price":10.111,"isQuote":false,"amount":10,"role":80}}
+
+Fields: `trade.id`, `trade.price`, `trade.isQuote`, `trade.amount`, `trade.role` (70 TAKER / 80 MAKER), `trade.seq`, `trade.timestamp`.
+
+- **canceled** — fired for each order that is canceled during processing (IOC expiry, FOK rejection, OCO cancel, post-only rejection)
+
+```json
+{ "symbol": "BTC/USD", "type": "canceled", "id": "order1" }
 ```
+
+Fields: `id` — the canceled order ID.
+
+- **activated** — fired when a STOP-LIMIT order is triggered by a trade and enters the order book as a limit order
+
+```json
+{ "symbol": "BTC/USD", "type": "activated", "id": "stopOrder1" }
+```
+
+Fields: `id` — the activated order ID.
 
 ### Example
 
@@ -294,3 +326,15 @@ console.info(matchingo.process(order2));
 console.log(matchingo.depth());
 // -> {"BTC/USD":{"1":{},"2":{}}}
 ```
+
+### License
+
+**matchingo** is open-source software licensed under the [MIT License](LICENSE.md).
+
+### Author
+
+Built by [Vano Devium](https://github.com/vanodevium/)
+
+Made with ❤️ in Ukraine
+
+[![Buy Me A Coffee](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/vanodevium)
