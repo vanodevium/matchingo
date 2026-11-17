@@ -5,7 +5,7 @@ import { DecimalScales, TestScales, TestSymbol } from "./constants.js";
 let m;
 
 beforeEach(() => {
-	m = new Matchingo(TestSymbol, false, TestScales);
+	m = new Matchingo(TestSymbol, TestScales);
 });
 
 test("bestBid: empty book returns null", () => {
@@ -62,7 +62,7 @@ test("bestBid updates after cancel", () => {
 });
 
 test("decimal scales are applied to book queries", () => {
-	const md = new Matchingo(TestSymbol, false, DecimalScales);
+	const md = new Matchingo(TestSymbol, DecimalScales);
 	md.process(md.newLimitOrder(1, BUY, "9.500", "2.000"));
 	md.process(md.newLimitOrder(2, SELL, "10.000", "1.500"));
 	expect(md.bestBid()).toEqual({ price: 9.5, amount: 2 });

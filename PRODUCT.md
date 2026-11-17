@@ -141,14 +141,14 @@ Each order must have an `amount`.
 
 ### 9.1 Constructor
 
-`new Matchingo(symbol, emit, { priceScale, amountScale })`
+`new Matchingo(symbol, { priceScale, amountScale, emitter })`
 
 | Argument      | Type    | Description                                                     |
 | ------------- | ------- | --------------------------------------------------------------- |
 | `symbol`      | string  | Required. The constructor throws an error if it is empty.       |
-| `emit`        | boolean | Optional. If `true`, the engine sends events. Default: `false`. |
 | `priceScale`  | integer | Required. Digits after the point for prices and quote amounts.  |
 | `amountScale` | integer | Required. Digits after the point for base amounts.              |
+| `emitter`     | boolean | Optional. If `true`, the engine sends events. Default: `false`. |
 
 `Matchingo.decimalFrom(value, scale)` returns the scaled integer of a number or string.
 

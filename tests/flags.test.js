@@ -5,7 +5,7 @@ import { TestScales, TestSymbol } from "./constants.js";
 let m;
 
 beforeEach(() => {
-	m = new Matchingo(TestSymbol, false, TestScales);
+	m = new Matchingo(TestSymbol, TestScales);
 });
 
 // ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ test("post-only: persists through dump/restore", () => {
 	m.process(o);
 
 	const snap = m.dump();
-	const m2 = new Matchingo(TestSymbol, false, TestScales);
+	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(snap);
 
 	const restored = m2.order(1);
@@ -180,7 +180,7 @@ test("iceberg: persists through dump/restore", () => {
 	m.process(o);
 
 	const snap = m.dump();
-	const m2 = new Matchingo(TestSymbol, false, TestScales);
+	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(snap);
 
 	const restored = m2.order(1);

@@ -28,7 +28,7 @@ const snap = matchingo.dump();
 const json = JSON.stringify(snap);
 
 // later, in a new process:
-const matchingo2 = new Matchingo("BTC/USD", false, {
+const matchingo2 = new Matchingo("BTC/USD", {
 	priceScale: 2,
 	amountScale: 8,
 });
@@ -60,7 +60,7 @@ The engine does not use floating-point math. It stores prices and amounts as int
 You **MUST** set the number of digits after the point for the price and for the amount:
 
 ```
-const matchingo = new Matchingo("BTC/USD", false, { priceScale: 2, amountScale: 8 });
+const matchingo = new Matchingo("BTC/USD", { priceScale: 2, amountScale: 8 });
 ```
 
 - there are no default scales; the constructor throws an error if a scale is missing
@@ -84,7 +84,7 @@ const matchingo = new Matchingo("BTC/USD", false, { priceScale: 2, amountScale: 
 You can restrict the allowed price and amount increments:
 
 ```
-const matchingo = new Matchingo("BTC/USD", false, {
+const matchingo = new Matchingo("BTC/USD", {
     priceScale: 2,
     amountScale: 8,
     tickSize: "0.01",   // price must be a multiple of 0.01
@@ -222,14 +222,21 @@ OCO pairs typically consist of a resting LIMIT order and a STOP-LIMIT order at d
 
 ### Events
 
-You can enable **events** mode by passing **true** as second argument, for instance:
+Enable events by passing `emitter: true`, then listen by event name:
 
-```
-const matchingo = new Matchingo("BTC/USD", true, { priceScale: 3, amountScale: 3 });
-matchingo.emitter.on("BTC/USD", (event) => {})
+```js
+const matchingo = new Matchingo("BTC/USD", {
+	priceScale: 3,
+	amountScale: 3,
+	emitter: true,
+});
+
+matchingo.emitter.on("volume", (event) => {});
+matchingo.emitter.on("depth", (event) => {});
+matchingo.emitter.on("trade", (event) => {});
 ```
 
-The event name is the symbol. The listener receives a single object that always contains `symbol` and `type`, plus the event-specific fields described below.
+Each listener receives a single object. All events include `symbol`.
 Side and role values are numbers (`1` BUY, `2` SELL, `70` TAKER, `80` MAKER).
 
 #### Event types
@@ -237,13 +244,7 @@ Side and role values are numbers (`1` BUY, `2` SELL, `70` TAKER, `80` MAKER).
 - **volume** — fired whenever the resting volume at a price level changes (order added, matched, or canceled)
 
 ```json
-{
-	"symbol": "BTC/USD",
-	"type": "volume",
-	"side": 1,
-	"price": 10.111,
-	"volume": 10
-}
+{ "symbol": "BTC/USD", "side": 1, "price": 10.111, "volume": 10 }
 ```
 
 Fields: `side` (1 BUY / 2 SELL), `price`, `volume` (total resting amount at that price after the change; `0` means the level is gone).
@@ -253,7 +254,6 @@ Fields: `side` (1 BUY / 2 SELL), `price`, `volume` (total resting amount at that
 ```json
 {
 	"symbol": "BTC/USD",
-	"type": "depth",
 	"depth": { "BTC/USD": { "1": { "10.111": 10 }, "2": {} } }
 }
 ```
@@ -265,7 +265,6 @@ Fields: `depth` — the full depth snapshot (same object `depth()` returns).
 ```json
 {
 	"symbol": "BTC/USD",
-	"type": "trade",
 	"trade": {
 		"id": "order1",
 		"price": 10.111,
@@ -280,10 +279,10 @@ Fields: `depth` — the full depth snapshot (same object `depth()` returns).
 
 Fields: `trade.id`, `trade.price`, `trade.isQuote`, `trade.amount`, `trade.role` (70 TAKER / 80 MAKER), `trade.seq`, `trade.timestamp`.
 
-- **canceled** — fired for each order that is canceled during processing (IOC expiry, FOK rejection, OCO cancel, post-only rejection)
+- **canceled** — fired for each order canceled during processing (IOC expiry, FOK rejection, OCO cancel, post-only rejection)
 
 ```json
-{ "symbol": "BTC/USD", "type": "canceled", "id": "order1" }
+{ "symbol": "BTC/USD", "id": "order1" }
 ```
 
 Fields: `id` — the canceled order ID.
@@ -291,7 +290,7 @@ Fields: `id` — the canceled order ID.
 - **activated** — fired when a STOP-LIMIT order is triggered by a trade and enters the order book as a limit order
 
 ```json
-{ "symbol": "BTC/USD", "type": "activated", "id": "stopOrder1" }
+{ "symbol": "BTC/USD", "id": "stopOrder1" }
 ```
 
 Fields: `id` — the activated order ID.
@@ -301,7 +300,7 @@ Fields: `id` — the activated order ID.
 ```
 import Matchingo from "matchingo";
 
-const matchingo = new Matchingo("BTC/USD", false, { priceScale: 3, amountScale: 3 });
+const matchingo = new Matchingo("BTC/USD", { priceScale: 3, amountScale: 3 });
 
 const order1 = matchingo.newLimitOrder("order1", Matchingo.BUY, 10.111, 10);
 const order2 = matchingo.newLimitOrder("order2", Matchingo.SELL, 10.111, 10);

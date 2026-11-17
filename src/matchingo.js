@@ -27,16 +27,15 @@ import StopBook from "./stop-book.js";
  * @typedef {1|2} Side
  */
 
+/**
+ * @param {string} symbol
+ * @param {boolean} emit
+ * @param {{priceScale: number, amountScale: number}} scales digits after the point
+ */
 export default class Matchingo {
-	/**
-	 * @param {string} symbol
-	 * @param {boolean} emit
-	 * @param {{priceScale: number, amountScale: number}} scales digits after the point
-	 */
 	constructor(
 		symbol,
-		emit,
-		{ priceScale, amountScale, tickSize, lotSize } = {},
+		{ priceScale, amountScale, tickSize, lotSize, emitter } = {},
 	) {
 		if (!symbol) {
 			throw new Error("please set up symbol");
@@ -64,7 +63,7 @@ export default class Matchingo {
 
 		this._seq = 0;
 
-		this._emit = emit || false;
+		this._emit = emitter || false;
 		this.emitter = new Emitter(this.symbol);
 	}
 

@@ -5,7 +5,7 @@ import { TestScales, TestSymbol } from "./constants.js";
 let m;
 
 beforeEach(() => {
-	m = new Matchingo(TestSymbol, false, TestScales);
+	m = new Matchingo(TestSymbol, TestScales);
 });
 
 test("first order gets seq 1", () => {

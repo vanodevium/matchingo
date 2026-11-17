@@ -1,6 +1,6 @@
 import Matchingo from "../index.js";
 
-const matchingo = new Matchingo("BTC/USD", false, {
+const matchingo = new Matchingo("BTC/USD", {
 	priceScale: 3,
 	amountScale: 3,
 });

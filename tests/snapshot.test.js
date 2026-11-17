@@ -5,7 +5,7 @@ import { DecimalScales, TestScales, TestSymbol } from "./constants.js";
 let m;
 
 beforeEach(() => {
-	m = new Matchingo(TestSymbol, false, TestScales);
+	m = new Matchingo(TestSymbol, TestScales);
 });
 
 test("dump: empty engine produces empty snapshot", () => {
@@ -23,7 +23,7 @@ test("dump/restore: resting limit orders survive round-trip", () => {
 	expect(snap.s).toHaveLength(0);
 	expect(snap.seq).toBe(3);
 
-	const m2 = new Matchingo(TestSymbol, false, TestScales);
+	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(snap);
 
 	// seq is preserved — next order gets seq 4
@@ -42,7 +42,7 @@ test("dump/restore: stop-limit orders survive round-trip", () => {
 	const snap = m.dump();
 	expect(snap.s).toHaveLength(2);
 
-	const m2 = new Matchingo(TestSymbol, false, TestScales);
+	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(snap);
 
 	// BUY stop fires at tradePrice >= 110 — place SELL@110 maker, BUY@115 taker
@@ -64,7 +64,7 @@ test("dump/restore: partial fill is preserved", () => {
 	expect(amount).toBe(10);
 	expect(open_amount).toBe(6);
 
-	const m2 = new Matchingo(TestSymbol, false, TestScales);
+	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(snap);
 
 	const result = m2.process(m2.newLimitOrder(3, BUY, 100, 6));
@@ -73,7 +73,7 @@ test("dump/restore: partial fill is preserved", () => {
 });
 
 test("dump/restore: OCO link is preserved", () => {
-	m = new Matchingo(TestSymbol, false, DecimalScales);
+	m = new Matchingo(TestSymbol, DecimalScales);
 	const lim = m.newLimitOrder(1, SELL, 1.1, 10);
 	const stop = m.newStopLimitOrder(2, SELL, 0.9, 0.85, 10);
 	lim.setOCO(2);
@@ -85,7 +85,7 @@ test("dump/restore: OCO link is preserved", () => {
 	expect(snap.l[0][6]).toBe(2); // oco field
 	expect(snap.s[0][6]).toBe(1);
 
-	const m2 = new Matchingo(TestSymbol, false, DecimalScales);
+	const m2 = new Matchingo(TestSymbol, DecimalScales);
 	m2.restore(snap);
 	const snap2 = m2.dump();
 	expect(snap2).toEqual(snap);

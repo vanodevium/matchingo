@@ -3,7 +3,7 @@ import Done from "./../src/models/done.js";
 import Trade from "./../src/models/trade.js";
 import { TestScales, TestSymbol } from "./constants.js";
 
-const matchingo = new Matchingo(TestSymbol, false, TestScales);
+const matchingo = new Matchingo(TestSymbol, TestScales);
 
 test("done structure limit no trades", () => {
 	const main = matchingo.newLimitOrder("main", Matchingo.BUY, 111, 111);

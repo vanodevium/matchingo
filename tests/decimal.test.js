@@ -37,11 +37,11 @@ test("decimal: convert back and quote math", () => {
 
 test("matchingo: scales are required", () => {
 	expect(() => new Matchingo(TestSymbol)).toThrow("priceScale");
-	expect(() => new Matchingo(TestSymbol, false, { priceScale: 2 })).toThrow(
+	expect(() => new Matchingo(TestSymbol, { priceScale: 2 })).toThrow(
 		"amountScale",
 	);
 	expect(
-		() => new Matchingo(TestSymbol, false, { priceScale: -1, amountScale: 0 }),
+		() => new Matchingo(TestSymbol, { priceScale: -1, amountScale: 0 }),
 	).toThrow("priceScale");
 });
 
@@ -52,7 +52,7 @@ test("matchingo: decimalFrom", () => {
 describe("decimal engine", () => {
 	let m;
 	beforeEach(() => {
-		m = new Matchingo(TestSymbol, true, DecimalScales);
+		m = new Matchingo(TestSymbol, { ...DecimalScales, emitter: true });
 	});
 	const empty = () => {
 		const depth = m.depth()[TestSymbol];
@@ -120,8 +120,8 @@ describe("decimal engine", () => {
 
 	test("events and result use decimals", () => {
 		const events = [];
-		m.emitter.on(TestSymbol, (header, data) =>
-			events.push([header.type, data]),
+		m.emitter.on("volume", ({ symbol: _s, ...data }) =>
+			events.push(["volume", data]),
 		);
 		m.process(m.newLimitOrder(1, BUY, 10.111, 1.5));
 		const r = m.process(m.newMarketOrder(2, SELL, 1.5));

@@ -10,7 +10,7 @@ import {
 let matchingo;
 
 beforeEach(() => {
-	matchingo = new Matchingo(TestSymbol, false, TestScales);
+	matchingo = new Matchingo(TestSymbol, TestScales);
 });
 
 test("orders: add limit buy", () => {

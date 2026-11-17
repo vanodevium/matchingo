@@ -5,7 +5,7 @@ import { DecimalScales, TestScales, TestSymbol } from "./constants.js";
 let matchingo;
 
 beforeEach(() => {
-	matchingo = new Matchingo(TestSymbol, true, TestScales);
+	matchingo = new Matchingo(TestSymbol, { ...TestScales, emitter: true });
 });
 
 test("process: empty order", () => {
@@ -13,7 +13,7 @@ test("process: empty order", () => {
 });
 
 test("process: market floating quote format", () => {
-	matchingo = new Matchingo(TestSymbol, true, DecimalScales);
+	matchingo = new Matchingo(TestSymbol, { ...DecimalScales, emitter: true });
 	const o11 = matchingo.newLimitOrder(11, SELL, 7.77, 11);
 	const o12 = matchingo.newLimitOrder(12, SELL, 7.78, 12);
 	const o13 = matchingo.newLimitOrder(13, SELL, 7.74, 13);
@@ -35,7 +35,7 @@ test("process: market floating quote format", () => {
 });
 
 test("process: market floating base format", () => {
-	matchingo = new Matchingo(TestSymbol, true, DecimalScales);
+	matchingo = new Matchingo(TestSymbol, { ...DecimalScales, emitter: true });
 	const o11 = matchingo.newLimitOrder(11, SELL, 7.77, 11);
 	const o12 = matchingo.newLimitOrder(12, SELL, 7.78, 12);
 	const o13 = matchingo.newLimitOrder(13, SELL, 7.74, 13);
@@ -57,7 +57,7 @@ test("process: market floating base format", () => {
 });
 
 test("process: market floating quote format sell", () => {
-	matchingo = new Matchingo(TestSymbol, true, DecimalScales);
+	matchingo = new Matchingo(TestSymbol, { ...DecimalScales, emitter: true });
 	const o11 = matchingo.newLimitOrder(11, BUY, 7.77, 11);
 	const o12 = matchingo.newLimitOrder(12, BUY, 7.78, 12);
 	const o13 = matchingo.newLimitOrder(13, BUY, 7.74, 13);
@@ -82,7 +82,7 @@ test("process: market floating quote format sell", () => {
 });
 
 test("process: market fulfilled", () => {
-	matchingo = new Matchingo(TestSymbol, true, DecimalScales);
+	matchingo = new Matchingo(TestSymbol, { ...DecimalScales, emitter: true });
 	const o11 = matchingo.newLimitOrder(11, SELL, 7.77, 11);
 	const o12 = matchingo.newLimitOrder(12, SELL, 7.78, 12);
 	const o13 = matchingo.newLimitOrder(13, SELL, 7.74, 13);
@@ -104,7 +104,7 @@ test("process: market fulfilled", () => {
 });
 
 test("process: market partial", () => {
-	matchingo = new Matchingo(TestSymbol, true, DecimalScales);
+	matchingo = new Matchingo(TestSymbol, { ...DecimalScales, emitter: true });
 	const o11 = matchingo.newLimitOrder(11, SELL, 7.77, 11);
 	const o12 = matchingo.newLimitOrder(12, SELL, 7.78, 12);
 	const o13 = matchingo.newLimitOrder(13, SELL, 7.74, 13);
@@ -125,7 +125,7 @@ test("process: market partial", () => {
 });
 
 test("process: market partial less", () => {
-	matchingo = new Matchingo(TestSymbol, true, DecimalScales);
+	matchingo = new Matchingo(TestSymbol, { ...DecimalScales, emitter: true });
 	const o11 = matchingo.newLimitOrder(11, SELL, 7.77, 11);
 	const o12 = matchingo.newLimitOrder(12, SELL, 7.78, 12);
 	const o13 = matchingo.newLimitOrder(13, SELL, 7.74, 13);
@@ -423,9 +423,11 @@ test("process: activated stop orders can fire other stop orders", () => {
 
 test("process: activated stop order sends its own events", () => {
 	const events = [];
-	matchingo.emitter.on(TestSymbol, (header, data) =>
-		events.push([header.type, data.trade?.id ?? data.id]),
-	);
+	for (const name of ["trade", "activated", "canceled", "volume"]) {
+		matchingo.emitter.on(name, (data) =>
+			events.push([name, data.trade?.id ?? data.id]),
+		);
+	}
 	matchingo.process(matchingo.newLimitOrder(1, SELL, 10, 1));
 	matchingo.process(matchingo.newLimitOrder(2, SELL, 11, 1));
 	matchingo.process(matchingo.newStopLimitOrder(100, BUY, 10, 11, 1));

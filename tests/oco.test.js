@@ -10,7 +10,7 @@ import {
 let matchingo;
 
 beforeEach(() => {
-	matchingo = new Matchingo(TestSymbol, true, TestScales);
+	matchingo = new Matchingo(TestSymbol, { ...TestScales, emitter: true });
 });
 
 test("oco: basic canceling", () => {

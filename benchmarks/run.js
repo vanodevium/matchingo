@@ -26,7 +26,7 @@ function phase(name, fn) {
 }
 
 const heapStart = heapUsed();
-const matchingo = new Matchingo(TestSymbol, false, TestScales);
+const matchingo = new Matchingo(TestSymbol, TestScales);
 
 const buyMs = phase(`${N} BUY`, () => {
 	for (let i = 1; i <= N; i++) {

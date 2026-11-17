@@ -1,12 +1,21 @@
 import Matchingo from "../index.js";
 
-const matchingo = new Matchingo("BTC/USD", true, {
+const matchingo = new Matchingo("BTC/USD", {
 	priceScale: 3,
 	amountScale: 3,
+	emitter: true,
 });
 
-matchingo.emitter.on("BTC/USD", (event) => {
-	console.log(JSON.stringify(event));
+matchingo.emitter.on("volume", (event) => {
+	console.log("volume", JSON.stringify(event));
+});
+
+matchingo.emitter.on("depth", (event) => {
+	console.log("depth", JSON.stringify(event));
+});
+
+matchingo.emitter.on("trade", (event) => {
+	console.log("trade", JSON.stringify(event));
 });
 
 const order1 = matchingo.newLimitOrder("order1", Matchingo.BUY, 10.111, 10);

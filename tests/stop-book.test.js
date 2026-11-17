@@ -6,7 +6,7 @@ import { TestScales, TestSymbol } from "./constants.js";
 let matchingo;
 
 beforeEach(() => {
-	matchingo = new Matchingo(TestSymbol, false, TestScales);
+	matchingo = new Matchingo(TestSymbol, TestScales);
 });
 
 test("stop book instance: activate", () => {

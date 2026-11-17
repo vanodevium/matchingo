@@ -5,7 +5,7 @@ import { DecimalScales, TestScales, TestSymbol } from "./constants.js";
 let matchingo;
 
 beforeEach(() => {
-	matchingo = new Matchingo(TestSymbol, false, TestScales);
+	matchingo = new Matchingo(TestSymbol, TestScales);
 });
 
 // --- Process rejects invalid input ---
@@ -175,7 +175,7 @@ test("process: quote mode market buy with remainder", () => {
 });
 
 test("process: quote mode market buy below one unit", () => {
-	matchingo = new Matchingo(TestSymbol, true, DecimalScales);
+	matchingo = new Matchingo(TestSymbol, { ...DecimalScales, emitter: true });
 	matchingo.process(matchingo.newLimitOrder(1, SELL, 2, 10));
 	const result = matchingo.process(matchingo.newMarketBuyQuoteOrder(2, 0.001));
 	// Budget 0.001 at price 2 buys 0.0005 base units. This is less than the
