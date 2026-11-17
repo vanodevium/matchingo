@@ -30,6 +30,10 @@ export default class OrderBook {
 		return this[order.side].remove(order);
 	}
 
+	requeueFront(order) {
+		return this[order.side].requeueFront(order);
+	}
+
 	fastRemove(order) {
 		if (order.type === 10) {
 			return false;

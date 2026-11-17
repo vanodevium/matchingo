@@ -1,6 +1,9 @@
 import Matchingo from "../index.js";
 
-const matchingo = new Matchingo("BTC/USD");
+const matchingo = new Matchingo("BTC/USD", false, {
+	priceScale: 3,
+	amountScale: 3,
+});
 
 const order1 = matchingo.newLimitOrder("order1", Matchingo.BUY, 10.111, 10);
 const order2 = matchingo.newLimitOrder("order2", Matchingo.SELL, 10.111, 10);

@@ -1,11 +1,11 @@
 import { BUY, FOK, IOC, SELL } from "../src/constants.js";
 import Matchingo from "../src/matchingo.js";
-import { TestSymbol } from "./constants.js";
+import { DecimalScales, TestScales, TestSymbol } from "./constants.js";
 
 let matchingo;
 
 beforeEach(() => {
-	matchingo = new Matchingo(TestSymbol);
+	matchingo = new Matchingo(TestSymbol, false, TestScales);
 });
 
 // --- Process rejects invalid input ---
@@ -175,15 +175,14 @@ test("process: quote mode market buy with remainder", () => {
 });
 
 test("process: quote mode market buy below one unit", () => {
+	matchingo = new Matchingo(TestSymbol, true, DecimalScales);
 	matchingo.process(matchingo.newLimitOrder(1, SELL, 2, 10));
 	const result = matchingo.process(matchingo.newMarketBuyQuoteOrder(2, 0.001));
-	// Budget 0.001, price 2, base amount = 0.0005 (JS floating point allows this trade)
-	// In Go with Decimal precision, 0.001/2 rounds to 0, so no trade happens.
-	// JS floating point allows the trade, so the budget is fully spent.
+	// Budget 0.001 at price 2 buys 0.0005 base units. This is less than the
+	// smallest amount (scale 3), so no trade happens.
 	expect(result.order.id).toBe(2);
-	expect(result.left).toBeCloseTo(0);
-	// The order is NOT canceled because the budget was fully spent
-	expect(result.canceled.length).toBe(0);
+	expect(result.trades.length).toBe(0);
+	expect(result.processed).toBe(0);
 });
 
 // --- Market order matching ---

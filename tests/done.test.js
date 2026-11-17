@@ -1,9 +1,9 @@
 import Matchingo from "./../index.js";
 import Done from "./../src/models/done.js";
 import Trade from "./../src/models/trade.js";
-import { TestSymbol } from "./constants.js";
+import { TestScales, TestSymbol } from "./constants.js";
 
-const matchingo = new Matchingo(TestSymbol);
+const matchingo = new Matchingo(TestSymbol, false, TestScales);
 
 test("done structure limit no trades", () => {
 	const main = matchingo.newLimitOrder("main", Matchingo.BUY, 111, 111);
@@ -28,6 +28,7 @@ test("done structure limit no trades", () => {
 		left: 0,
 		canceled: ["canceled"],
 		activated: ["activated"],
+		activations: [],
 	});
 });
 
@@ -108,6 +109,7 @@ test("done structure limit", () => {
 		left: 61,
 		canceled: ["canceled"],
 		activated: ["activated"],
+		activations: [],
 	});
 });
 
@@ -188,5 +190,6 @@ test("done structure market", () => {
 		left: 5,
 		canceled: ["canceled"],
 		activated: ["activated"],
+		activations: [],
 	});
 });

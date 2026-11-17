@@ -1,6 +1,18 @@
-import { BUY, FOK, IOC, LIMIT, MARKET, SELL, STOP_LIMIT } from "./constants.js";
+import {
+	BUY,
+	FOK,
+	GTC,
+	IOC,
+	LIMIT,
+	MARKET,
+	SELL,
+	STOP_LIMIT,
+} from "./constants.js";
+import { baseOf, checkScale, fromInt, quoteOf, toInt } from "./decimal.js";
 import Emitter from "./emmiter.js";
 import Done from "./models/done.js";
+import Order from "./models/order.js";
+import StopLimitOrder from "./models/stop-limit-order.js";
 import Trade from "./models/trade.js";
 import {
 	createLimitOrder,
@@ -12,14 +24,34 @@ import OrdersCollection from "./orders-collection.js";
 import StopBook from "./stop-book.js";
 
 /**
- * @typedef {"BUY"|"SELL"} Side
+ * @typedef {1|2} Side
  */
 
 export default class Matchingo {
-	constructor(symbol, emit) {
+	/**
+	 * @param {string} symbol
+	 * @param {boolean} emit
+	 * @param {{priceScale: number, amountScale: number}} scales digits after the point
+	 */
+	constructor(
+		symbol,
+		emit,
+		{ priceScale, amountScale, tickSize, lotSize } = {},
+	) {
 		if (!symbol) {
 			throw new Error("please set up symbol");
 		}
+		checkScale("priceScale", priceScale);
+		checkScale("amountScale", amountScale);
+
+		this._ps = priceScale;
+		this._as = amountScale;
+		this._quoteDivisor = 10 ** amountScale;
+
+		this._tick = tickSize !== undefined ? toInt(tickSize, priceScale) : 1;
+		this._lot = lotSize !== undefined ? toInt(lotSize, amountScale) : 1;
+		if (this._tick < 1) throw new Error("tickSize must be >= 1 unit");
+		if (this._lot < 1) throw new Error("lotSize must be >= 1 unit");
 
 		this.symbol = symbol;
 		this.orderBook = new OrderBook(this.symbol);
@@ -29,6 +61,8 @@ export default class Matchingo {
 		this._activated = new OrdersCollection();
 		this._canceled = new OrdersCollection();
 		this._oco = new OrdersCollection();
+
+		this._seq = 0;
 
 		this._emit = emit || false;
 		this.emitter = new Emitter(this.symbol);
@@ -41,7 +75,9 @@ export default class Matchingo {
 	 * @returns {Order}
 	 */
 	newMarketOrder(id, side, baseAmount) {
-		return createMarketOrder(this.symbol, id, side, baseAmount);
+		const a = this._positive(baseAmount, this._as);
+		this._checkLot(a, baseAmount);
+		return createMarketOrder(this.symbol, id, side, a);
 	}
 
 	/**
@@ -50,7 +86,12 @@ export default class Matchingo {
 	 * @returns {Order}
 	 */
 	newMarketBuyQuoteOrder(id, quoteAmount) {
-		const order = createMarketOrder(this.symbol, id, BUY, quoteAmount);
+		const order = createMarketOrder(
+			this.symbol,
+			id,
+			BUY,
+			this._quote(quoteAmount),
+		);
 		order.setQuoteMode();
 		return order;
 	}
@@ -61,7 +102,12 @@ export default class Matchingo {
 	 * @returns {Order}
 	 */
 	newMarketSellQuoteOrder(id, quoteAmount) {
-		const order = createMarketOrder(this.symbol, id, SELL, quoteAmount);
+		const order = createMarketOrder(
+			this.symbol,
+			id,
+			SELL,
+			this._quote(quoteAmount),
+		);
 		order.setQuoteMode();
 		return order;
 	}
@@ -74,7 +120,52 @@ export default class Matchingo {
 	 * @returns {Order}
 	 */
 	newLimitOrder(id, side, price, amount) {
-		return createLimitOrder(this.symbol, id, side, price, amount);
+		const [p, a] = this._priceAmount(price, amount);
+		return createLimitOrder(this.symbol, id, side, p, a);
+	}
+
+	/**
+	 * Post-only limit order: canceled if it would immediately match.
+	 * @param {string|number} id
+	 * @param {Side} side
+	 * @param {number} price
+	 * @param {number} amount
+	 * @returns {Order}
+	 */
+	newPostOnlyLimitOrder(id, side, price, amount) {
+		const [p, a] = this._priceAmount(price, amount);
+		const order = createLimitOrder(this.symbol, id, side, p, a);
+		order.postOnly = true;
+		return order;
+	}
+
+	/**
+	 * Iceberg limit order: only peakAmount is visible at a time.
+	 * When the peak is consumed, the order refills from its hidden reserve.
+	 * @param {string|number} id
+	 * @param {Side} side
+	 * @param {number} price
+	 * @param {number} amount total quantity (visible + hidden)
+	 * @param {number} peakAmount visible quantity per slice
+	 * @returns {Order}
+	 */
+	newIcebergOrder(id, side, price, amount, peakAmount) {
+		const [p, a] = this._priceAmount(price, amount);
+		const peak = this._positive(peakAmount, this._as);
+		if (peak % this._lot !== 0) {
+			throw new Error(
+				`peakAmount must be a multiple of lotSize: ${peakAmount}`,
+			);
+		}
+		if (peak >= a) {
+			throw new Error(
+				`peakAmount must be less than amount: ${peakAmount} >= ${amount}`,
+			);
+		}
+		const order = createLimitOrder(this.symbol, id, side, p, a);
+		order.peakAmount = peak;
+		order.open_amount = peak;
+		return order;
 	}
 
 	/**
@@ -86,7 +177,12 @@ export default class Matchingo {
 	 * @returns {StopLimitOrder}
 	 */
 	newStopLimitOrder(id, side, stop, price, amount) {
-		return createStopLimitOrder(this.symbol, id, side, stop, price, amount);
+		const [p, a] = this._priceAmount(price, amount);
+		const s = this._positive(stop, this._ps);
+		if (s % this._tick !== 0) {
+			throw new Error(`stop must be a multiple of tickSize: ${stop}`);
+		}
+		return createStopLimitOrder(this.symbol, id, side, s, p, a);
 	}
 
 	/**
@@ -142,6 +238,31 @@ export default class Matchingo {
 			return false;
 		}
 
+		order.seq = ++this._seq;
+		order.timestamp = Date.now();
+
+		const done = this._process(order);
+		if (!(done instanceof Done)) {
+			return done;
+		}
+
+		// An activated stop order is a new order. It starts after the order
+		// that fired it is complete, and it has its own result.
+		const queue = this._activated.toArray();
+		for (let i = 0; i < queue.length; i++) {
+			queue[i].setTaker();
+			done.activations.push(this._process(queue[i]));
+			queue.push(...this._activated.toArray());
+		}
+
+		return done;
+	}
+
+	/**
+	 * @param {Order} order
+	 * @returns {Done|boolean}
+	 */
+	_process(order) {
 		this._reset();
 
 		if (this._checkCancelOCO(order)) {
@@ -172,11 +293,17 @@ export default class Matchingo {
 				this._processCanceled();
 				return this._matchingOrderResult(order);
 			}
+
+			if (order.postOnly && this._wouldMatchImmediately(order)) {
+				this._cancelOrder(order);
+				this._processCanceled();
+				return this._matchingOrderResult(order);
+			}
 		}
 
 		this._matchOrders(order);
 
-		const trade = new Trade(order, []);
+		const trade = new Trade(order, [], this._quoteDivisor);
 
 		if (this._orders.size()) {
 			this._orders.orders.forEach((order) => {
@@ -205,6 +332,48 @@ export default class Matchingo {
 	}
 
 	/**
+	 * Modify a resting limit order.
+	 *
+	 * Same price and amount decreases: updates in place, keeps time priority.
+	 * Price changes or amount increases: cancels and re-processes (loses time priority).
+	 *
+	 * @param {string|number} id
+	 * @param {number} newPrice
+	 * @param {number} newAmount
+	 * @returns {Done|boolean} Done for re-queue, true for in-place, false if not found
+	 */
+	modify(id, newPrice, newAmount) {
+		const order = this.orderBook.find(id);
+		if (!order) {
+			return false;
+		}
+
+		const [p, a] = this._priceAmount(newPrice, newAmount);
+
+		if (p === order.price && a <= order.open_amount) {
+			// In-place: reduce open_amount, keep queue position
+			const diff = order.open_amount - a;
+			order.amount -= diff;
+			order.open_amount = a;
+			if (diff > 0) {
+				this.orderBook.volume.decrease(order, order.price, diff);
+				this._emitVolume(order);
+			}
+			return true;
+		}
+
+		// Re-queue: cancel old, create new (loses time priority)
+		const { side, tif, oco } = order;
+		this.cancel(id);
+
+		const newOrder = createLimitOrder(this.symbol, id, side, p, a);
+		newOrder.tif = tif;
+		newOrder.oco = oco;
+
+		return this.process(newOrder);
+	}
+
+	/**
 	 * @param {string|number} id
 	 * @returns {?Order}
 	 */
@@ -213,11 +382,155 @@ export default class Matchingo {
 	}
 
 	depth() {
-		this._emit && this.emitter.depth({ depth: this.orderBook.volume.getRaw() });
-		return this.orderBook.volume.getRaw();
+		const raw = this.orderBook.volume.getRaw()[this.symbol];
+		const side = (volume) =>
+			Object.fromEntries(
+				Object.entries(volume).map(([price, amount]) => [
+					fromInt(Number(price), this._ps),
+					fromInt(amount, this._as),
+				]),
+			);
+		const depth = {
+			[this.symbol]: { [BUY]: side(raw[BUY]), [SELL]: side(raw[SELL]) },
+		};
+		this._emit && this.emitter.depth({ depth });
+		return depth;
+	}
+
+	bestBid() {
+		const entry = this.orderBook.volume.best(BUY);
+		if (!entry) return null;
+		return {
+			price: fromInt(entry.price, this._ps),
+			amount: fromInt(entry.amount, this._as),
+		};
+	}
+
+	bestAsk() {
+		const entry = this.orderBook.volume.best(SELL);
+		if (!entry) return null;
+		return {
+			price: fromInt(entry.price, this._ps),
+			amount: fromInt(entry.amount, this._as),
+		};
+	}
+
+	/**
+	 * @param {Side} side
+	 * @param {number|string} price
+	 * @returns {{price: number, amount: number}|null}
+	 */
+	level(side, price) {
+		const p = toInt(price, this._ps);
+		const amount = this.orderBook.volume[side].getRaw()[p];
+		if (!amount) return null;
+		return { price: fromInt(p, this._ps), amount: fromInt(amount, this._as) };
+	}
+
+	/**
+	 * Parse a decimal (number or string) into an integer with the given scale.
+	 * @param {number|string} value
+	 * @param {number} scale
+	 * @returns {number}
+	 */
+	static decimalFrom(value, scale) {
+		return toInt(value, scale);
+	}
+
+	/**
+	 * Return a compact snapshot of all resting orders (internal integers).
+	 * @returns {{ v: number, seq: number, l: Array, s: Array }}
+	 */
+	dump() {
+		const l = [];
+		for (const side of [BUY, SELL]) {
+			this.orderBook[side].priceOrdersTreeMap.forEach((node) => {
+				node.v.toArray().forEach((o) => {
+					l.push([
+						o.id,
+						o.side,
+						o.price,
+						o.amount,
+						o.open_amount,
+						o.tif,
+						o.oco,
+						o.postOnly || false,
+						o.peakAmount || 0,
+					]);
+				});
+			});
+		}
+
+		const s = [];
+		for (const book of [this.stopBook._buy, this.stopBook._sell]) {
+			book.priceOrdersTreeMap.forEach((node) => {
+				node.v.toArray().forEach((o) => {
+					s.push([o.id, o.side, o.stop, o.price, o.amount, o.tif, o.oco]);
+				});
+			});
+		}
+
+		return { v: 1, seq: this._seq, l, s };
+	}
+
+	/**
+	 * Restore state from a dump produced by dump().
+	 * Clears the current books first.
+	 * @param {{ v: number, seq: number, l: Array, s: Array }} snapshot
+	 */
+	restore(snapshot) {
+		if (snapshot?.v !== 1) {
+			throw new Error("unsupported dump version");
+		}
+
+		this.orderBook = new OrderBook(this.symbol);
+		this.stopBook = new StopBook(this.symbol);
+		this._seq = snapshot.seq;
+
+		for (const [
+			id,
+			side,
+			price,
+			amount,
+			open_amount,
+			tif,
+			oco,
+			postOnly,
+			peakAmount,
+		] of snapshot.l) {
+			const o = new Order(this.symbol, id, LIMIT, side, price, amount);
+			o.open_amount = open_amount;
+			o.tif = tif ?? GTC;
+			o.oco = oco ?? null;
+			o.postOnly = postOnly ?? false;
+			o.peakAmount = peakAmount ?? 0;
+			this.orderBook.append(o);
+			this.orderBook.volume.increase(o, price, open_amount);
+		}
+
+		for (const [id, side, stop, price, amount, tif, oco] of snapshot.s) {
+			const o = new StopLimitOrder(this.symbol, id, side, stop, price, amount);
+			o.tif = tif ?? GTC;
+			o.oco = oco ?? null;
+			this.stopBook.append(o);
+		}
 	}
 
 	// -----------------------------------------------------------------------
+
+	/**
+	 * Fire the stop orders that the trade price crosses. The engine starts
+	 * them after the current order is complete.
+	 * @param {number} tradePrice
+	 */
+	_activateStops(tradePrice) {
+		if (this.stopBook.isEmpty()) {
+			return;
+		}
+		this.stopBook.activate(tradePrice).forEach((stop) => {
+			this._activated.append(stop);
+		});
+	}
 
 	/**
 	 * @param {Order} order
@@ -234,19 +547,12 @@ export default class Matchingo {
 
 		const iter = this.orderBook.getBestIterator(order);
 		while (amount > 0 && iter.value) {
-			amount = this._processQueue(iter.key, iter.value, order, amount);
-			this.stopBook.activate(iter.key, this.orderBook).forEach((order) => {
-				if (!order.activated) {
-					return;
-				}
-				this.add(order);
-				this._activated.append(order);
-			});
+			amount = this._processQueue(iter.value, order, amount);
 			iter.next();
 		}
 	}
 
-	_processQueue(price, queue, order, amount) {
+	_processQueue(queue, order, amount) {
 		while (queue.length) {
 			if (order.open_amount === 0) {
 				break;
@@ -259,6 +565,11 @@ export default class Matchingo {
 				continue;
 			}
 
+			if (order.traderID !== null && order.traderID === limitOrder.traderID) {
+				this._cancelOrder(limitOrder);
+				continue;
+			}
+
 			const tradePrice = this.orderBook.comparator.compare(order, limitOrder);
 			if (!tradePrice) {
 				amount = 0;
@@ -266,23 +577,35 @@ export default class Matchingo {
 			}
 
 			let tradeAmount = 0;
+			let spent = 0;
 
 			if (order._isQuote) {
 				tradeAmount = limitOrder.getMaxAmount(
-					this._convertQuoteToBase(price, amount),
+					baseOf(amount, tradePrice, this._quoteDivisor),
 				);
-				tradeAmount = this._convertBaseToQuote(price, tradeAmount);
+				spent = quoteOf(tradeAmount, tradePrice, this._quoteDivisor);
 			} else {
 				tradeAmount = limitOrder.getMaxAmount(amount);
+				spent = tradeAmount;
 			}
 
 			if (tradeAmount === 0) {
 				break;
 			}
 
-			amount -= tradeAmount;
+			amount -= spent;
 
-			if (this._increase(order, limitOrder, tradePrice, tradeAmount)) {
+			const removed = this._increase(
+				order,
+				limitOrder,
+				tradePrice,
+				tradeAmount,
+				spent,
+			);
+
+			this._activateStops(tradePrice);
+
+			if (removed) {
 				continue;
 			}
 
@@ -294,21 +617,32 @@ export default class Matchingo {
 		return amount;
 	}
 
-	_increase(order, orderBookOrder, tradePrice, tradeAmount) {
+	_increase(order, orderBookOrder, tradePrice, tradeAmount, spent) {
 		if (tradeAmount === 0) {
 			throw new Error("increase method received zero amount!");
 		}
 
-		order.increase(tradeAmount, tradePrice);
+		order.increase(spent, tradePrice);
 
 		this._cancelOCO(order);
 
-		if (orderBookOrder.increase(tradeAmount, tradePrice, order._isQuote)) {
+		if (orderBookOrder.increase(tradeAmount)) {
 			orderBookOrder.tradePrice = tradePrice;
 
 			if (orderBookOrder.open_amount === 0) {
-				orderBookOrder.deleted = true;
-				this._fastRemove(orderBookOrder);
+				const remaining = orderBookOrder.amount - orderBookOrder.tradeAmount;
+				if (orderBookOrder.peakAmount > 0 && remaining > 0) {
+					// Iceberg refill: move to back of same price-level queue with new peak.
+					orderBookOrder.open_amount = Math.min(
+						orderBookOrder.peakAmount,
+						remaining,
+					);
+					this.orderBook.requeueFront(orderBookOrder);
+					this._increaseVolume(orderBookOrder);
+				} else {
+					orderBookOrder.deleted = true;
+					this._fastRemove(orderBookOrder);
+				}
 			}
 
 			this._cancelOCO(orderBookOrder);
@@ -384,8 +718,10 @@ export default class Matchingo {
 	 */
 	_matchingOrderResult(order, trade = null) {
 		if (!trade) {
-			trade = new Trade(order, this._orders.toArray());
+			trade = new Trade(order, this._orders.toArray(), this._quoteDivisor);
 		}
+
+		this._toOutput(trade);
 
 		const done = new Done(
 			trade,
@@ -430,14 +766,6 @@ export default class Matchingo {
 		this._canceled.reset();
 	}
 
-	_convertQuoteToBase(price, amount) {
-		return amount / price;
-	}
-
-	_convertBaseToQuote(price, amount) {
-		return amount * price;
-	}
-
 	/**
 	 * @param {Order} order
 	 */
@@ -463,9 +791,68 @@ export default class Matchingo {
 		this._emit &&
 			this.emitter.volume({
 				side: order.side,
-				price: order.price,
-				volume: this.orderBook.volume.getVolume(order),
+				price: fromInt(order.price, this._ps),
+				volume: fromInt(this.orderBook.volume.getVolume(order), this._as),
 			});
+	}
+
+	/**
+	 * Convert internal integers of a trade to the decimals of the caller.
+	 * @param {Trade} trade
+	 */
+	_toOutput(trade) {
+		for (const entry of new Set([trade.order, ...trade.orders])) {
+			entry.price = fromInt(entry.price, this._ps);
+			entry.amount = fromInt(entry.amount, entry.isQuote ? this._ps : this._as);
+		}
+		const scale = trade.isQuote ? this._ps : this._as;
+		trade.processed = fromInt(trade.processed, scale);
+		trade.left = fromInt(trade.left, scale);
+	}
+
+	_positive(value, scale) {
+		const int = toInt(value, scale);
+		if (int === 0) {
+			throw new Error(`value must be greater than zero: ${value}`);
+		}
+		return int;
+	}
+
+	_checkLot(int, value) {
+		if (int % this._lot !== 0) {
+			throw new Error(`amount must be a multiple of lotSize: ${value}`);
+		}
+	}
+
+	_quote(value) {
+		const int = this._positive(value, this._ps);
+		if (!Number.isSafeInteger(int * this._quoteDivisor)) {
+			throw new Error(`quote amount is too big: ${value}`);
+		}
+		return int;
+	}
+
+	_wouldMatchImmediately(order) {
+		const best = this.orderBook.volume.best(order.oppositeSide());
+		if (!best) return false;
+		return order.side === BUY
+			? best.price <= order.price
+			: best.price >= order.price;
+	}
+
+	_priceAmount(price, amount) {
+		const p = this._positive(price, this._ps);
+		const a = this._positive(amount, this._as);
+		if (p % this._tick !== 0) {
+			throw new Error(`price must be a multiple of tickSize: ${price}`);
+		}
+		if (a % this._lot !== 0) {
+			throw new Error(`amount must be a multiple of lotSize: ${amount}`);
+		}
+		if (!Number.isSafeInteger(p * a)) {
+			throw new Error(`price * amount is too big: ${price} * ${amount}`);
+		}
+		return [p, a];
 	}
 }
 

@@ -6,5 +6,6 @@ export default class Done {
 		this.left = trade.left;
 		this.canceled = canceled.map((o) => o.getKey());
 		this.activated = activated.map((o) => o.getKey());
+		this.activations = [];
 	}
 }

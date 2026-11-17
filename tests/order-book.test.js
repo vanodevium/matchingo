@@ -1,12 +1,12 @@
 import { BUY, BUY_KEY, LIMIT, SELL, SELL_KEY } from "../src/constants.js";
 import Matchingo from "../src/matchingo.js";
 import OrderBook from "../src/order-book.js";
-import { createTestPriceOrder, TestSymbol } from "./constants.js";
+import { createTestPriceOrder, TestScales, TestSymbol } from "./constants.js";
 
 let matchingo;
 
 beforeEach(() => {
-	matchingo = new Matchingo(TestSymbol);
+	matchingo = new Matchingo(TestSymbol, false, TestScales);
 });
 
 test("order book instance: duplicates", () => {

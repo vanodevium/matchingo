@@ -10,3 +10,6 @@ export function createTestPriceOrder(id, type, side, price, amount) {
 export function createTestStopLimitPrice(id, side, stop, price, amount) {
 	return new StopLimitOrder(TestSymbol, id, side, stop, price, amount);
 }
+
+export const TestScales = { priceScale: 0, amountScale: 0 };
+export const DecimalScales = { priceScale: 3, amountScale: 3 };

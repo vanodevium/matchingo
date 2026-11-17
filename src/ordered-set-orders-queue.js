@@ -107,6 +107,21 @@ export default class OrderedSetOrdersQueue {
 		return false;
 	}
 
+	/**
+	 * Move order from front to back of its price-level queue (iceberg refill).
+	 * Does not touch `unique` or the skip-list structure.
+	 * @param {Order} order
+	 * @returns {boolean}
+	 */
+	requeueFront(order) {
+		const price = order[this.key];
+		const queue = this.priceOrdersTreeMap.get(price);
+		if (!queue || queue.peekFront() !== order) return false;
+		queue.shift();
+		queue.push(order);
+		return true;
+	}
+
 	getBestIterator() {
 		const map = this.priceOrdersTreeMap;
 		const iter = map.iterator();

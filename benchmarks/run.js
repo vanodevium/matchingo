@@ -1,75 +1,64 @@
-import DenQueue from "denque";
-import { bench, run } from "mitata";
 import { BUY, SELL } from "../src/constants.js";
 import Matchingo from "../src/matchingo.js";
-import OrderedSetOrdersQueue from "../src/ordered-set-orders-queue.js";
-import { TestSymbol } from "../tests/constants.js";
+import { TestScales, TestSymbol } from "../tests/constants.js";
 
-// BenchmarkAppendLimitOrders: append-only, no matching
-bench("BenchmarkAppendLimitOrders", function* () {
-	const matchingo = new Matchingo(TestSymbol);
-	const orders = [];
-	for (let i = 0; i < 10000; i++) {
-		orders.push(matchingo.newLimitOrder(i + 1, BUY, 111, 10));
+const N = 10 ** 6;
+const PRICE = 111;
+const AMOUNT = 10;
+
+const mb = (bytes) => (bytes / 1024 / 1024).toFixed(1);
+
+function heapUsed() {
+	global.gc?.();
+	return process.memoryUsage().heapUsed;
+}
+
+function phase(name, fn) {
+	const start = process.hrtime.bigint();
+	fn();
+	const ms = Number(process.hrtime.bigint() - start) / 1e6;
+	console.log(
+		`${name.padEnd(12)} ${ms.toFixed(0).padStart(7)} ms | ${((ms * 1e6) / N)
+			.toFixed(0)
+			.padStart(6)} ns/op | ${(N / (ms / 1000)).toFixed(0).padStart(9)} ops/s`,
+	);
+	return ms;
+}
+
+const heapStart = heapUsed();
+const matchingo = new Matchingo(TestSymbol, false, TestScales);
+
+const buyMs = phase(`${N} BUY`, () => {
+	for (let i = 1; i <= N; i++) {
+		matchingo.process(matchingo.newLimitOrder(i, BUY, PRICE, AMOUNT));
 	}
-	yield () => {
-		orders.forEach((order) => {
-			matchingo.process(order);
-		});
-	};
 });
+const heapBook = heapUsed();
 
-// BenchmarkLimitOrders: process limit orders through matching engine
-bench("BenchmarkLimitOrders", function* () {
-	const matchingo = new Matchingo(TestSymbol);
-	const n = 5000;
-	for (let i = 0; i < n; i++) {
-		matchingo.process(matchingo.newLimitOrder(i + 1, SELL, 111, 10));
+const sellMs = phase(`${N} SELL`, () => {
+	for (let i = 1; i <= N; i++) {
+		matchingo.process(matchingo.newLimitOrder(N + i, SELL, PRICE, AMOUNT));
 	}
-	yield () => {
-		for (let i = 0; i < n; i++) {
-			matchingo.process(matchingo.newLimitOrder(n + i + 1, BUY, 111, 10));
-		}
-	};
 });
+const heapEnd = heapUsed();
 
-// BenchmarkOrderSide: append limit orders to one side (bid)
-bench("BenchmarkOrderSide", function* () {
-	const orderSide = new OrderedSetOrdersQueue("desc", "price");
-	const matchingo = new Matchingo(TestSymbol);
-	yield () => {
-		for (let i = 1; i <= 10000; i++) {
-			const order = matchingo.newLimitOrder(i, BUY, 16, 150);
-			orderSide.append(order);
-		}
-	};
-});
+const depth = matchingo.depth()[TestSymbol];
+if (Object.keys(depth[BUY]).length || Object.keys(depth[SELL]).length) {
+	throw new Error(`order book is not clear: ${JSON.stringify(depth)}`);
+}
 
-// BenchmarkOrderQueue: append orders to a single-price queue
-bench("BenchmarkOrderQueue", function* () {
-	const matchingo = new Matchingo(TestSymbol);
-	const queue = new DenQueue();
-	yield () => {
-		for (let i = 1; i <= 10000; i++) {
-			const order = matchingo.newLimitOrder(i, BUY, 16, i);
-			queue.push(order);
-		}
-	};
-});
-
-// BenchmarkQueueSliceReview: create a queue, append 1000 orders, and verify
-bench("BenchmarkQueueSliceReview", function* () {
-	const matchingo = new Matchingo(TestSymbol);
-	const order = matchingo.newLimitOrder("benchmark", BUY, 10, 1);
-	yield () => {
-		const queue = new DenQueue();
-		for (let j = 0; j < 1000; j++) {
-			queue.push(order);
-		}
-		if (queue.length !== 1000) {
-			throw new Error("unexpected length");
-		}
-	};
-});
-
-run();
+const totalMs = buyMs + sellMs;
+console.log(
+	`total        ${totalMs.toFixed(0).padStart(7)} ms | ${(
+		(totalMs * 1e6) /
+		(2 * N)
+	)
+		.toFixed(0)
+		.padStart(6)} ns/op`,
+);
+console.log(
+	`heap: start ${mb(heapStart)} MB | full book ${mb(heapBook)} MB (+${mb(
+		heapBook - heapStart,
+	)}) | end ${mb(heapEnd)} MB | rss ${mb(process.memoryUsage().rss)} MB`,
+);
+console.log("order book is clear");

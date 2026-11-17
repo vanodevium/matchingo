@@ -1,6 +1,9 @@
 import Matchingo from "../index.js";
 
-const matchingo = new Matchingo("BTC/USD", true);
+const matchingo = new Matchingo("BTC/USD", true, {
+	priceScale: 3,
+	amountScale: 3,
+});
 
 matchingo.emitter.on("BTC/USD", (event) => {
 	console.log(JSON.stringify(event));

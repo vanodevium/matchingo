@@ -3,13 +3,14 @@ import Matchingo from "../src/matchingo.js";
 import {
 	createTestPriceOrder,
 	createTestStopLimitPrice,
+	TestScales,
 	TestSymbol,
 } from "./constants.js";
 
 let matchingo;
 
 beforeEach(() => {
-	matchingo = new Matchingo(TestSymbol);
+	matchingo = new Matchingo(TestSymbol, false, TestScales);
 });
 
 test("orders: add limit buy", () => {

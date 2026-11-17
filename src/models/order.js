@@ -10,13 +10,14 @@ import {
 } from "../constants.js";
 
 export default class Order {
-	constructor(symbol, id, type, side, price, amount) {
+	constructor(symbol, id, type, side, price, amount, traderID = null) {
 		this.id = id;
 		this.type = type;
 		this.side = side;
 		this.symbol = symbol;
 		this.price = price;
 		this.amount = amount;
+		this.traderID = traderID;
 
 		this.open_amount = amount;
 
@@ -34,6 +35,8 @@ export default class Order {
 		this.activated = false;
 
 		this._isQuote = false;
+		this.postOnly = false;
+		this.peakAmount = 0;
 	}
 
 	isMaker() {
@@ -76,13 +79,9 @@ export default class Order {
 		return this.opposite;
 	}
 
-	increase(amount, price, isQuote) {
+	increase(amount) {
 		if (amount === 0) {
 			return false;
-		}
-
-		if (this._isQuote || isQuote) {
-			amount = amount / price;
 		}
 
 		this.open_amount -= amount;

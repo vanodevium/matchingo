@@ -74,6 +74,12 @@ export default class Volume {
 		return accumulator >= amount;
 	}
 
+	best(side) {
+		const first = this[side].geyKeys().first();
+		if (!first) return null;
+		return { price: first.k, amount: this[side].getRaw()[first.k] };
+	}
+
 	getVolume(order) {
 		return this[order.side].getVolume(order);
 	}

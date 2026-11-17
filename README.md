@@ -6,15 +6,37 @@ Incredibly fast matching engine for HFT (high-frequency trading) written in JS
 
 ### Features
 
-- supports **MARKET**, **LIMIT**, **STOP-LIMIT**, **OCO** order types
-- supports _time-in-force_ (**GTK**, **FOK**, **IOC**) parameters for **LIMIT** orders
+- supports **MARKET**, **LIMIT**, **STOP-LIMIT**, **OCO**, **post-only**, and **iceberg** order types
+- supports _time-in-force_ (**GTC**, **FOK**, **IOC**) parameters for **LIMIT** orders
+- price-time priority: best price first, then the oldest order; trades happen at the maker price
 - supports EventEmitter for outbound signals
 - well tested code
 
-### Coming features
+### Scope
 
-- state backup/restore functionality
-- ...
+Matchingo is a **matching engine only**. It does not store accounts or balances,
+and it does not check that order IDs are unique over time (this is the task of the library user).
+It matches orders, keeps the order book in memory, and sends events.
+
+### Backup and restore
+
+`dump()` returns a compact plain object that captures all resting orders (limit and stop-limit). Save it anywhere — disk, Redis, a database column. `restore(snapshot)` loads it back; the engine resumes from that point with the same sequence counter.
+
+```js
+const snap = matchingo.dump();
+// snap is a JSON-serializable plain object; store it however you like
+const json = JSON.stringify(snap);
+
+// later, in a new process:
+const matchingo2 = new Matchingo("BTC/USD", false, {
+	priceScale: 2,
+	amountScale: 8,
+});
+matchingo2.restore(JSON.parse(json));
+// matchingo2 is now equivalent to matchingo at the moment dump() was called
+```
+
+The dump contains only open orders (internal integers, not decimals). It is as small as the number of resting orders allows. MARKET orders are never resting, so they are never in the dump.
 
 ##### Order amount caution
 
@@ -28,6 +50,65 @@ If you don't need to freeze money, feel free use **BASE amount**.
 > This may seem inconvenient, but it is a precautionary measure for **double spending**: when a user places a
 > **MARKET** **BUY** in asynchronous way, you will be able to freeze the correct amount on his balance.
 
+In QUOTE mode the engine buys as much BASE as the budget allows and never spends more than the budget.
+It rounds the BASE amount down. If the rest of the budget is too small for one unit of BASE (_dust_),
+the engine cancels the rest: the order ID is in `canceled` and `left` is greater than zero.
+
+##### Numbers: scales
+
+The engine does not use floating-point math. It stores prices and amounts as integers.
+You **MUST** set the number of digits after the point for the price and for the amount:
+
+```
+const matchingo = new Matchingo("BTC/USD", false, { priceScale: 2, amountScale: 8 });
+```
+
+- there are no default scales; the constructor throws an error if a scale is missing
+- `priceScale` is also the scale of QUOTE amounts
+- scale is an integer from 0 to 15
+- you can pass a number or a string (use a string for long values: `"0.00000001"`)
+- the engine **rejects** a value with more digits than the scale, a negative value, zero, `NaN`,
+  and a value that is not a safe integer after scaling
+- `price * amount` (as scaled integers) must be less than 2^53; otherwise the engine throws an error
+
+> [!IMPORTANT]
+> **Performance tradeoff: integer precision is capped at 2^53.**
+> The engine uses JavaScript numbers as integers for best performance — no BigInt, no decimal library overhead.
+> Any single value or `price × amount` product that exceeds 2^53 (≈ 9 quadrillion) is rejected with an error.
+> Classic engines use 64-bit integers or arbitrary-precision decimals and have no such cap.
+> If your market has very small units (high `amountScale`) or very large nominal values, verify that your
+> worst-case `price × amount` stays below the limit.
+
+##### Numbers: tick size and lot size
+
+You can restrict the allowed price and amount increments:
+
+```
+const matchingo = new Matchingo("BTC/USD", false, {
+    priceScale: 2,
+    amountScale: 8,
+    tickSize: "0.01",   // price must be a multiple of 0.01
+    lotSize: "0.00000001", // amount must be a multiple of 1 satoshi
+});
+```
+
+- `tickSize` is the minimum price increment; it must be a positive multiple of `1 / 10^priceScale`
+- `lotSize` is the minimum amount increment; it must be a positive multiple of `1 / 10^amountScale`
+- both default to `1 / 10^scale` (every value that fits the scale is accepted)
+- the engine throws when a price or amount is not a multiple of the respective size
+- results, events and `depth()` return normal decimals
+- `matchingo.order(id)` returns the internal order; its `price` and `amount` are scaled integers
+- `Matchingo.decimalFrom(value, scale)` returns the scaled integer of a value
+
+##### Sequence numbers and timestamps
+
+Each call to `process()` stamps two fields on the order before matching:
+
+- **`seq`** — a monotonically increasing integer, starting at 1 for each `Matchingo` instance; establishes the total arrival order across all order types
+- **`timestamp`** — `Date.now()` at the moment `process()` is called (milliseconds since Unix epoch)
+
+Both fields are copied to every entry in `done.order` and `done.trades`.
+
 ### Installation (**temporary unavailable, use git clone**)
 
 ```
@@ -38,14 +119,25 @@ npm i matchingo
 
 #### Order instance creation
 
-- `matchingo.newMarketOrder(id: string, side: Side, baseAmount: number)`
-- > only if you understand QUOTE mode, use `matchingo.newMarketBuyQuoteOrder(id: string, quoteAmount: number)` or 
-  > `matchingo.newMarketSellQuoteOrder(id: string, quoteAmount: number)` 
+- `matchingo.newMarketOrder(id: string, side: Side, baseAmount: number|string)`
+- > only if you understand QUOTE mode, use `matchingo.newMarketBuyQuoteOrder(id: string, quoteAmount: number|string)` or
+  > `matchingo.newMarketSellQuoteOrder(id: string, quoteAmount: number|string)`
 
-- `matchingo.newLimitOrder(id: string, side: Side, price: number, amount: number)`
-- `matchingo.newStopLimitOrder(id: string, side: Side, stop: number, price: number, amount: number)`
+- `matchingo.newLimitOrder(id: string, side: Side, price: number|string, amount: number|string)`
+- `matchingo.newPostOnlyLimitOrder(id: string, side: Side, price: number|string, amount: number|string)`
+  — same as a limit order, but **canceled** (not rested) if it would immediately match; it must rest in the book as a maker
+- `matchingo.newIcebergOrder(id: string, side: Side, price: number|string, amount: number|string, peakAmount: number|string)`
+  — only `peakAmount` is visible in the book at a time; when the visible peak is consumed, the order refills from its hidden reserve and re-queues at the back of the same price level; `peakAmount` must be less than `amount`
+- `matchingo.newStopLimitOrder(id: string, side: Side, stop: number|string, price: number|string, amount: number|string)`
+
+Each method throws an error for an invalid value (see "Numbers: scales").
 
 > For OCO orders use `order.setOCO(id: string)`
+>
+> For time-in-force use `order.setTIF(tif)` with `Matchingo.IOC` or `Matchingo.FOK` (default is GTC)
+
+Constants: `Matchingo.BUY` (1), `Matchingo.SELL` (2), `Matchingo.MARKET`, `Matchingo.LIMIT`,
+`Matchingo.STOP_LIMIT`, `Matchingo.IOC`, `Matchingo.FOK`.
 
 #### Order processing
 
@@ -53,193 +145,152 @@ npm i matchingo
 
 ##### processing result
 
-> sometimes, process() returns undefined or boolean
+**process()** returns:
 
-**process()** returns **done** object for **MARKET** and **LIMIT** orders which contains:
+- **done** object for **MARKET** and **LIMIT** orders
+- `true` for **STOP-LIMIT** orders (the order is accepted and waits in the stop book)
+- `false` if an open order with the same ID exists
+- `undefined` if the order is empty
+
+The **done** object contains:
 
 - **order**: exactly processed order
   - **id**: order ID
   - **price**: concrete trade price
   - **isQuote**: _true_ if order's amount was in Quote format
   - **amount**: concrete trade amount
-  - **role**: role (**TAKER** or **MAKER**)
-- **trades**: array of orders; is filled when there was matching; if not empty, first element is exactly processed order
+  - **role**: role (`70` is **TAKER**, `80` is **MAKER**)
+- **trades**: array of orders; is filled when there was matching; if not empty, first element is exactly processed order.
   - **id**: order ID
   - **price**: concrete trade price
   - **isQuote**: _true_ if order's amount was in Quote format
   - **amount**: concrete trade amount
-  - **role**: role (**TAKER** or **MAKER**)
+  - **role**: role (`70` is **TAKER**, `80` is **MAKER**)
 - **left**: value of left amount for this processing, can be zero
 - **processed**: value of processed amount for this processing, can be zero
 - **canceled**: array of order IDs which was cancelled for this processing (**IOC**, **OCO**), can be empty
 - **activated**: array of order IDs which was activated for this processing (**STOP** orders), can be empty
+- **activations**: array of **done** objects, one for each activated order, in the order of activation; can be empty.
+  Each activated order is processed like a new order after the current order is complete, so it has its own `trades`, `canceled` and `activated`
+
+`left` and `processed` describe only the order passed to `process()`.
 
 For instance:
 
 ```
 {
-    "order": {
-        "id": "main",
-        "price": 111,
-        "isQuote": false,
-        "amount": 50,
-        "role": "TAKER"
-    },
-    "trades": [{
-        "id": "main",
-        "price": 111,
-        "isQuote": false,
-        "amount": 50,
-        "role": "TAKER"
-    }, {
-        "id": "order10",
-        "price": 111,
-        "isQuote": false,
-        "amount": 10,
-        "role": "TAKER"
-    }, {
-        "id": "order11",
-        "price": 111,
-        "isQuote": false,
-        "amount": 10,
-        "role": "TAKER"
-    }, {
-        "id": "order12",
-        "price": 111,
-        "isQuote": false,
-        "amount": 10,
-        "role": "TAKER"
-    }, {
-        "id": "order13",
-        "price": 111,
-        "isQuote": false,
-        "amount": 10,
-        "role": "TAKER"
-    }, {
-        "id": "order14",
-        "price": 111,
-        "isQuote": false,
-        "amount": 10,
-        "role": "TAKER"
-    }],
-    "processed": 50,
-    "left": 61,
-    "canceled": ["canceled"],
-    "activated": ["activated"]
+    "order": {"id": "order2", "price": 10.111, "isQuote": false, "amount": 10, "role": 70},
+    "trades": [
+        {"id": "order2", "price": 10.111, "isQuote": false, "amount": 10, "role": 70},
+        {"id": "order1", "price": 10.111, "isQuote": false, "amount": 10, "role": 80}
+    ],
+    "processed": 10,
+    "left": 0,
+    "canceled": [],
+    "activated": [],
+    "activations": []
 }
 ```
 
+##### OCO orders
+
+An OCO (one-cancels-the-other) order is a pair of linked orders. Call `order.setOCO(linkedId)` on one order to link it to another. When one order in the pair trades (even partially as a maker), the engine immediately cancels the other. The canceled ID appears in `done.canceled`.
+
+OCO pairs typically consist of a resting LIMIT order and a STOP-LIMIT order at different prices, so that only one of them can fill.
+
+##### STOP-LIMIT activation
+
+- the engine checks the stop orders after each trade, with the price of that trade
+- a **BUY** stop activates when the trade price is **at or above** the stop price
+- a **SELL** stop activates when the trade price is **at or below** the stop price
+- no trade, no activation
+- an activated order is processed like a new **LIMIT** order after the current order is complete;
+  its result is in `activations`, and its unfilled part stays in the order book
+
 #### Order cancellation
 
-- `matchingo.cancel(id: string): bool`
+- `matchingo.cancel(id: string): bool` - removes an order from the order book or the stop book; `false` if not found
+
+#### Other methods
+
+- `matchingo.order(id)` - returns the open order with this ID, or `false`
+- `matchingo.depth()` - returns volume for each price: `{"BTC/USD":{"1":{"10.111":10},"2":{}}}`
+  (`1` is **BUY**, `2` is **SELL**)
+- `matchingo.bestBid()` - returns `{ price, amount }` for the best (highest) buy price, or `null` if the buy side is empty
+- `matchingo.bestAsk()` - returns `{ price, amount }` for the best (lowest) sell price, or `null` if the sell side is empty
+- `matchingo.level(side, price)` - returns `{ price, amount }` for the total amount resting at that price level, or `null` if that level does not exist
 
 ### Events
 
 You can enable **events** mode by passing **true** as second argument, for instance:
 
 ```
-const matchingo = new Matchingo("BTC/USD", true);
-matchingo.emitter.on("BTC/USD", (event) => {})
+const matchingo = new Matchingo("BTC/USD", true, { priceScale: 3, amountScale: 3 });
+matchingo.emitter.on("BTC/USD", (header, data) => {})
 ```
+
+The event name is the symbol. The listener gets two arguments: `header` (`symbol` and `type`) and `data`.
+Side and role values are numbers (`1` BUY, `2` SELL, `70` TAKER, `80` MAKER).
 
 Each event has own type:
 
 - **volume**: when volume for some price was changed
+
 ```
-{"symbol":"BTC/USD","type":"volume","side":"BUY",price":10.111,"volume":10}
+{"symbol":"BTC/USD","type":"volume"} {"side":1,"price":10.111,"volume":10}
 ```
 
-- **depth**: when depth was changed
+- **depth**: when `depth()` is called
+
 ```
-{"symbol":"BTC/USD","type":"depth","depth":{"BTC/USD":{"BUY":{"10.111":10},"SELL":{}}}}
+{"symbol":"BTC/USD","type":"depth"} {"depth":{"BTC/USD":{"1":{"10.111":10},"2":{}}}}
 ```
 
 - **activated**: when was activated some **STOP-LIMIT** order
+
 ```
-{"symbol":"BTC/USD","type":"activated","id":"activatedOrderID"}
+{"symbol":"BTC/USD","type":"activated"} {"id":"activatedOrderID"}
 ```
 
 - **canceled**: when was canceled some order
+
 ```
-{"symbol":"BTC/USD","type":"canceled","id":"canceledOrderID"}
+{"symbol":"BTC/USD","type":"canceled"} {"id":"canceledOrderID"}
 ```
 
 - **trade**: when was some trade
+
 ```
-{"symbol":"BTC/USD","type":"trade","trade":{"id":"order1","price":10.111,"isQuote":false,"amount":10,"role":"MAKER"}}
+{"symbol":"BTC/USD","type":"trade"} {"trade":{"id":"order1","price":10.111,"isQuote":false,"amount":10,"role":80}}
 ```
 
 ### Example
 
 ```
-const Matchingo = require("matchingo");
+import Matchingo from "matchingo";
 
-const matchingo = new Matchingo("BTC/USD");
+const matchingo = new Matchingo("BTC/USD", false, { priceScale: 3, amountScale: 3 });
 
 const order1 = matchingo.newLimitOrder("order1", Matchingo.BUY, 10.111, 10);
 const order2 = matchingo.newLimitOrder("order2", Matchingo.SELL, 10.111, 10);
 
 // order book is empty
 console.log(matchingo.depth());
-// -> {"BTC/USD":{"BUY":{},"SELL":{}}}
+// -> {"BTC/USD":{"1":{},"2":{}}}
 
 // because order book is empty, this order is appended only
 console.info(matchingo.process(order1));
-// -> {"order":{"id":"order1","price":10.111,"isQuote":false,"amount":0,"role":"TAKER"},"trades":[],"processed":0,"left":0,"canceled":[],"activated":[]}
+// -> {"order":{"id":"order1","price":10.111,"isQuote":false,"amount":0,"role":70},"trades":[],"processed":0,"left":0,"canceled":[],"activated":[],"activations":[]}
 
 // order book now contains info about previous order
 console.log(matchingo.depth());
-// -> {"BTC/USD":{"BUY":{"10.111":10},"SELL":{}}}
+// -> {"BTC/USD":{"1":{"10.111":10},"2":{}}}
 
 // this order will be matched with previous
 console.info(matchingo.process(order2));
-// -> {"order":{"id":"order2","price":10.111,"isQuote":false,"amount":10,"role":"TAKER"},"trades":[{"id":"order2","price":10.111,"isQuote":false,"amount":10,"role":"TAKER"},{"id":"order1","price":10.111,"isQuote":false,"amount":10,"role":"MAKER"}],"processed":10,"left":0,"canceled":[],"activated":[]}
+// -> {"order":{"id":"order2","price":10.111,"isQuote":false,"amount":10,"role":70},"trades":[{"id":"order2","price":10.111,"isQuote":false,"amount":10,"role":70},{"id":"order1","price":10.111,"isQuote":false,"amount":10,"role":80}],"processed":10,"left":0,"canceled":[],"activated":[],"activations":[]}
 
 // order book is empty now
 console.log(matchingo.depth());
-// -> {"BTC/USD":{"BUY":{},"SELL":{}}}
+// -> {"BTC/USD":{"1":{},"2":{}}}
 ```
-
-### Benchmark
-
-```
-os: linux
-arch: amd64
-cpu: Intel(R) Core(TM) i7-8565U CPU @ 1.80GHz
-
-❯ node benchmarks/matching.js
-NANOBENCH version 2
-> /usr/bin/node benchmarks/matching.js
-
-# Match 10 000 new Limits
-ok ~44 ms (0 s + 44280734 ns)
-
-# Match 10 000 new Limits different prices
-ok ~47 ms (0 s + 47185364 ns)
-
-# Match 100 000 new Limits
-ok ~101 ms (0 s + 100913675 ns)
-
-# Match 1M new Limits
-ok ~836 ms (0 s + 836485826 ns)
-
-# Match 2M new Limits
-ok ~1.92 s (1 s + 918657706 ns)
-
-# Match 3M new Limits
-ok ~2.88 s (2 s + 877035219 ns)
-
-all benchmarks completed
-ok ~5.82 s (5 s + 824558524 ns)
-
-```
-
-### License
-
-**matchingo** is open-sourced software licensed under the [MIT license](./LICENSE.md).
-
-[Vano Devium](https://github.com/vanodevium/)
-
----
-
-Made with ❤️ in Ukraine

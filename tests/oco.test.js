@@ -3,13 +3,14 @@ import Matchingo from "../src/matchingo.js";
 import {
 	createTestPriceOrder,
 	createTestStopLimitPrice,
+	TestScales,
 	TestSymbol,
 } from "./constants.js";
 
 let matchingo;
 
 beforeEach(() => {
-	matchingo = new Matchingo(TestSymbol, true);
+	matchingo = new Matchingo(TestSymbol, true, TestScales);
 });
 
 test("oco: basic canceling", () => {
