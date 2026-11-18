@@ -22,6 +22,6 @@ const order1 = matchingo.newLimitOrder("order1", Matchingo.BUY, 10.111, 10);
 const order2 = matchingo.newLimitOrder("order2", Matchingo.SELL, 10.111, 10);
 
 matchingo.depth();
-matchingo.process(order1);
+matchingo.submit(order1);
 matchingo.depth();
-matchingo.process(order2);
+matchingo.submit(order2);

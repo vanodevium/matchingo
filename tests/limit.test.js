@@ -19,7 +19,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 test("limit buy rests in book when no asks", () => {
-	const done = m.process(m.newLimitOrder(1, BUY, 10, 5));
+	const done = m.submit(m.newLimitOrder(1, BUY, 10, 5));
 	expect(done.trades).toEqual([]);
 	expect(done.processed).toBe(0);
 	expect(m.order(1)).toBeTruthy();
@@ -27,15 +27,15 @@ test("limit buy rests in book when no asks", () => {
 });
 
 test("limit sell rests in book when no bids", () => {
-	const done = m.process(m.newLimitOrder(1, SELL, 10, 5));
+	const done = m.submit(m.newLimitOrder(1, SELL, 10, 5));
 	expect(done.trades).toEqual([]);
 	expect(m.order(1)).toBeTruthy();
 	expect(m.orderBook.volume.get(SELL)).toBe(5);
 });
 
 test("limit buy does not cross when ask is above limit", () => {
-	m.process(m.newLimitOrder(1, SELL, 11, 5));
-	const done = m.process(m.newLimitOrder(2, BUY, 10, 5));
+	m.submit(m.newLimitOrder(1, SELL, 11, 5));
+	const done = m.submit(m.newLimitOrder(2, BUY, 10, 5));
 	expect(done.trades).toEqual([]);
 	expect(m.order(2)).toBeTruthy();
 });
@@ -45,8 +45,8 @@ test("limit buy does not cross when ask is above limit", () => {
 // ---------------------------------------------------------------------------
 
 test("limit buy fully fills matching sell", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 5));
-	const done = m.process(m.newLimitOrder(2, BUY, 10, 5));
+	m.submit(m.newLimitOrder(1, SELL, 10, 5));
+	const done = m.submit(m.newLimitOrder(2, BUY, 10, 5));
 
 	expect(done.trades.length).toBe(2);
 	expect(done.processed).toBe(5);
@@ -59,11 +59,11 @@ test("limit buy fully fills matching sell", () => {
 });
 
 test("limit sell fully fills matching buys", () => {
-	m.process(m.newLimitOrder(1, BUY, 13, 13));
-	m.process(m.newLimitOrder(2, BUY, 12, 12));
-	m.process(m.newLimitOrder(3, BUY, 11, 11));
+	m.submit(m.newLimitOrder(1, BUY, 13, 13));
+	m.submit(m.newLimitOrder(2, BUY, 12, 12));
+	m.submit(m.newLimitOrder(3, BUY, 11, 11));
 
-	const done = m.process(m.newLimitOrder(4, SELL, 10, 36));
+	const done = m.submit(m.newLimitOrder(4, SELL, 10, 36));
 
 	expect(done.trades.length).toBe(4);
 	// best bid first (13), then 12, then 11
@@ -76,11 +76,11 @@ test("limit sell fully fills matching buys", () => {
 });
 
 test("limit buy fully fills multiple asks in price order", () => {
-	m.process(m.newLimitOrder(1, SELL, 11, 11));
-	m.process(m.newLimitOrder(2, SELL, 12, 12));
-	m.process(m.newLimitOrder(3, SELL, 13, 13));
+	m.submit(m.newLimitOrder(1, SELL, 11, 11));
+	m.submit(m.newLimitOrder(2, SELL, 12, 12));
+	m.submit(m.newLimitOrder(3, SELL, 13, 13));
 
-	const done = m.process(m.newLimitOrder(4, BUY, 13, 36));
+	const done = m.submit(m.newLimitOrder(4, BUY, 13, 36));
 
 	expect(done.trades.length).toBe(4);
 	// best ask first (11), then 12, then 13
@@ -96,11 +96,11 @@ test("limit buy fully fills multiple asks in price order", () => {
 // ---------------------------------------------------------------------------
 
 test("limit buy: more than available — remainder rests in book", () => {
-	m.process(m.newLimitOrder(1, SELL, 11, 11));
-	m.process(m.newLimitOrder(2, SELL, 12, 12));
-	m.process(m.newLimitOrder(3, SELL, 13, 13));
+	m.submit(m.newLimitOrder(1, SELL, 11, 11));
+	m.submit(m.newLimitOrder(2, SELL, 12, 12));
+	m.submit(m.newLimitOrder(3, SELL, 13, 13));
 
-	const done = m.process(m.newLimitOrder(4, BUY, 13, 40));
+	const done = m.submit(m.newLimitOrder(4, BUY, 13, 40));
 
 	expect(done.processed).toBe(36);
 	expect(done.left).toBe(4);
@@ -110,17 +110,17 @@ test("limit buy: more than available — remainder rests in book", () => {
 });
 
 test("limit buy: less than available — drains partially, leaves maker", () => {
-	m.process(m.newLimitOrder(1, SELL, 11, 11));
-	m.process(m.newLimitOrder(2, SELL, 12, 12));
-	m.process(m.newLimitOrder(3, SELL, 13, 13));
+	m.submit(m.newLimitOrder(1, SELL, 11, 11));
+	m.submit(m.newLimitOrder(2, SELL, 12, 12));
+	m.submit(m.newLimitOrder(3, SELL, 13, 13));
 
-	const done = m.process(m.newLimitOrder(4, BUY, 13, 24));
+	const done = m.submit(m.newLimitOrder(4, BUY, 13, 24));
 
 	expect(done.processed).toBe(24);
 	expect(done.left).toBe(0);
 	// order 3 (price 13) partially filled: 13 → 12 filled → 1 remains
 	expect(done.trades[3].amount).toBe(1);
-	expect(m.order(3).open_amount).toBe(12);
+	expect(m.order(3).open).toBe(12);
 	expect(m.orderBook.volume.get(SELL)).toBe(12);
 });
 
@@ -131,16 +131,16 @@ test("limit buy: less than available — drains partially, leaves maker", () => 
 test("trade price: maker entry uses maker price, taker entry uses taker limit price", () => {
 	// A limit taker's trade entry carries the order's own price (not 0).
 	// Only market order takers show price=0 (because market orders have price=0).
-	m.process(m.newLimitOrder(1, SELL, 10, 5)); // ask at 10
-	const done = m.process(m.newLimitOrder(2, BUY, 15, 5)); // willing to pay 15
+	m.submit(m.newLimitOrder(1, SELL, 10, 5)); // ask at 10
+	const done = m.submit(m.newLimitOrder(2, BUY, 15, 5)); // willing to pay 15
 
 	expect(done.trades[0].price).toBe(15); // limit taker: own price
 	expect(done.trades[1].price).toBe(10); // maker: ask price
 });
 
 test("market taker trade entry has price=0", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 5));
-	const done = m.process(m.newMarketOrder(2, BUY, 5));
+	m.submit(m.newLimitOrder(1, SELL, 10, 5));
+	const done = m.submit(m.newMarketOrder(2, BUY, 5));
 	expect(done.trades[0].price).toBe(0); // market taker
 	expect(done.trades[1].price).toBe(10); // maker
 });
@@ -150,14 +150,14 @@ test("market taker trade entry has price=0", () => {
 // ---------------------------------------------------------------------------
 
 test("volume decreases after trade", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 10));
-	m.process(m.newLimitOrder(2, BUY, 10, 4));
+	m.submit(m.newLimitOrder(1, SELL, 10, 10));
+	m.submit(m.newLimitOrder(2, BUY, 10, 4));
 	expect(m.orderBook.volume.get(SELL)).toBe(6);
 	expect(m.orderBook.volume.get(BUY)).toBe(0);
 });
 
 test("volume decreases after cancel", () => {
-	m.process(m.newLimitOrder(1, BUY, 10, 10));
+	m.submit(m.newLimitOrder(1, BUY, 10, 10));
 	expect(m.orderBook.volume.get(BUY)).toBe(10);
 	m.cancel(1);
 	expect(m.orderBook.volume.get(BUY)).toBe(0);

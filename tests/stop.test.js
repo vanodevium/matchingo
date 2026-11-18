@@ -20,17 +20,17 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 test("stop-limit is added to stop book, not order book", () => {
-	m.process(m.newStopLimitOrder(1, BUY, 10, 11, 5));
+	m.submit(m.newStopLimitOrder(1, BUY, 10, 11, 5));
 	expect(m.stopBook.find(1)).toBeTruthy();
 	expect(m.orderBook.find(1)).toBeFalsy();
 });
 
 test("stop does not fire when no trade happens", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 5));
-	m.process(m.newStopLimitOrder(100, BUY, 10, 11, 1));
+	m.submit(m.newLimitOrder(1, SELL, 10, 5));
+	m.submit(m.newStopLimitOrder(100, BUY, 10, 11, 1));
 
 	// Place a limit buy that does not cross — no trade
-	const done = m.process(m.newLimitOrder(2, BUY, 9, 1));
+	const done = m.submit(m.newLimitOrder(2, BUY, 9, 1));
 	expect(done.trades).toEqual([]);
 	expect(done.activated).toEqual([]);
 	expect(m.stopBook.find(100)).toBeTruthy();
@@ -41,47 +41,47 @@ test("stop does not fire when no trade happens", () => {
 // ---------------------------------------------------------------------------
 
 test("BUY stop activates when trade price reaches stop", () => {
-	m.process(m.newStopLimitOrder(100, BUY, 10, 15, 5));
-	m.process(m.newLimitOrder(1, SELL, 12, 10));
+	m.submit(m.newStopLimitOrder(100, BUY, 10, 15, 5));
+	m.submit(m.newLimitOrder(1, SELL, 12, 10));
 
-	const done = m.process(m.newMarketOrder(2, BUY, 10));
+	const done = m.submit(m.newMarketOrder(2, BUY, 10));
 	expect(done.activated).toContain(100);
 	expect(m.stopBook.find(100)).toBeFalsy();
 });
 
 test("BUY stop does NOT activate when trade price stays below stop", () => {
-	m.process(m.newStopLimitOrder(100, BUY, 12, 13, 5));
-	m.process(m.newLimitOrder(1, SELL, 11, 10));
+	m.submit(m.newStopLimitOrder(100, BUY, 12, 13, 5));
+	m.submit(m.newLimitOrder(1, SELL, 11, 10));
 
-	const done = m.process(m.newMarketOrder(2, BUY, 10));
+	const done = m.submit(m.newMarketOrder(2, BUY, 10));
 	expect(done.activated).toEqual([]);
 	expect(m.stopBook.find(100)).toBeTruthy();
 });
 
 test("SELL stop activates when trade price reaches stop", () => {
-	m.process(m.newStopLimitOrder(100, SELL, 10, 9, 5));
-	m.process(m.newLimitOrder(1, BUY, 8, 10));
+	m.submit(m.newStopLimitOrder(100, SELL, 10, 9, 5));
+	m.submit(m.newLimitOrder(1, BUY, 8, 10));
 
-	const done = m.process(m.newMarketOrder(2, SELL, 10));
+	const done = m.submit(m.newMarketOrder(2, SELL, 10));
 	expect(done.activated).toContain(100);
 });
 
 test("BUY stop activates when trade price jumps over the stop", () => {
-	m.process(m.newStopLimitOrder(100, BUY, 10, 9, 1));
-	m.process(m.newLimitOrder(1, SELL, 12, 1));
+	m.submit(m.newStopLimitOrder(100, BUY, 10, 9, 1));
+	m.submit(m.newLimitOrder(1, SELL, 12, 1));
 
-	const done = m.process(m.newMarketOrder(2, BUY, 1));
+	const done = m.submit(m.newMarketOrder(2, BUY, 1));
 	expect(done.activated).toContain(100);
 	// activated order keeps its limit price
 	expect(m.order(100).price).toBe(9);
 });
 
 test("stop fires on a trade in the middle of a price level", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newLimitOrder(2, SELL, 10, 1));
-	m.process(m.newStopLimitOrder(100, BUY, 10, 10, 1));
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newLimitOrder(2, SELL, 10, 1));
+	m.submit(m.newStopLimitOrder(100, BUY, 10, 10, 1));
 
-	const done = m.process(m.newMarketOrder(3, BUY, 1));
+	const done = m.submit(m.newMarketOrder(3, BUY, 1));
 
 	// caller fills order 1; stop activates and fills order 2
 	expect(done.trades.map((t) => t.id)).toStrictEqual([3, 1]);
@@ -93,11 +93,11 @@ test("stop fires on a trade in the middle of a price level", () => {
 // ---------------------------------------------------------------------------
 
 test("activated stop is matched immediately (not only added to book)", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newLimitOrder(2, SELL, 11, 5));
-	m.process(m.newStopLimitOrder(100, BUY, 10, 11, 5));
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newLimitOrder(2, SELL, 11, 5));
+	m.submit(m.newStopLimitOrder(100, BUY, 10, 11, 5));
 
-	const done = m.process(m.newMarketOrder(3, BUY, 1));
+	const done = m.submit(m.newMarketOrder(3, BUY, 1));
 
 	expect(done.activated).toContain(100);
 	expect(done.activations.length).toBe(1);
@@ -108,53 +108,59 @@ test("activated stop is matched immediately (not only added to book)", () => {
 });
 
 test("activated stop rests in book when it does not cross", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newStopLimitOrder(100, BUY, 10, 9, 5)); // limit 9 < best ask 10
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newStopLimitOrder(100, BUY, 10, 9, 5)); // limit 9 < best ask 10
 
-	m.process(m.newMarketOrder(3, BUY, 1));
+	m.submit(m.newMarketOrder(3, BUY, 1));
 
 	expect(m.order(100).price).toBe(9);
 	expect(m.orderBook.volume.get(BUY)).toBe(5);
 });
 
 test("activated stop can fire other stop orders (cascade)", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newLimitOrder(2, SELL, 12, 1));
-	m.process(m.newStopLimitOrder(100, BUY, 10, 12, 1));
-	m.process(m.newStopLimitOrder(101, BUY, 12, 13, 1));
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newLimitOrder(2, SELL, 12, 1));
+	m.submit(m.newStopLimitOrder(100, BUY, 10, 12, 1));
+	m.submit(m.newStopLimitOrder(101, BUY, 12, 13, 1));
 
-	const done = m.process(m.newMarketOrder(3, BUY, 1));
+	const done = m.submit(m.newMarketOrder(3, BUY, 1));
 
 	expect(done.activated).toContain(100);
-	expect(done.activations.map((a) => a.order.id)).toStrictEqual([100, 101]);
+	expect(done.activations.map((a) => a.order.id)).toStrictEqual([100]);
 	expect(done.activations[0].activated).toContain(101);
+	// the cascade is nested in the result of the stop that fired it
+	expect(done.activations[0].activations.map((a) => a.order.id)).toStrictEqual([
+		101,
+	]);
 });
 
 test("activated stop emits its own trade and activated events", () => {
 	const events = [];
-	for (const name of ["trade", "activated"]) {
-		m.emitter.on(name, (data) =>
-			events.push([name, data.trade?.id ?? data.id]),
-		);
-	}
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newLimitOrder(2, SELL, 11, 1));
-	m.process(m.newStopLimitOrder(100, BUY, 10, 11, 1));
+	m.emitter.on("trade", (data) =>
+		events.push(["trade", [data.takerId, data.makerId]]),
+	);
+	m.emitter.on("activated", (data) => events.push(["activated", data.id]));
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newLimitOrder(2, SELL, 11, 1));
+	m.submit(m.newStopLimitOrder(100, BUY, 10, 11, 1));
 	events.length = 0;
 
-	m.process(m.newMarketOrder(3, BUY, 1));
+	m.submit(m.newMarketOrder(3, BUY, 1));
 
 	const trades = events.filter(([t]) => t === "trade").map(([, id]) => id);
-	expect(trades).toStrictEqual([3, 1, 100, 2]);
+	expect(trades).toStrictEqual([
+		[3, 1],
+		[100, 2],
+	]);
 	expect(events).toContainEqual(["activated", 100]);
 });
 
 test("stop order activation preserves order identity and rests", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newLimitOrder(2, SELL, 11, 11));
-	m.process(m.newStopLimitOrder(100, SELL, 10, 11, 11));
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newLimitOrder(2, SELL, 11, 11));
+	m.submit(m.newStopLimitOrder(100, SELL, 10, 11, 11));
 
-	const done = m.process(m.newLimitOrder(3, BUY, 10, 1));
+	const done = m.submit(m.newLimitOrder(3, BUY, 10, 1));
 	expect(done.activated).toContain(100);
 	// order 2 (11 units) + stop 100 activated as limit (11 units) both rest at 11
 	expect(m.orderBook.volume.get(SELL)).toBe(22);
@@ -209,14 +215,6 @@ test("stop book: activation order — by stop price then insertion time", () => 
 
 	expect(book.activate(21).map((o) => o.id)).toStrictEqual([2, 3, 1, 5]);
 	expect(book.find(4)).toBeTruthy();
-});
-
-test("stop book: cancel removes order and returns it", () => {
-	const book = new StopBook(TestSymbol);
-	book.append(m.newStopLimitOrder(1, SELL, 10, 9, 1));
-	expect(book.cancel(1).id).toBe(1);
-	expect(book.cancel(1)).toBe(false);
-	expect(book.isEmpty()).toBe(true);
 });
 
 test("stop book: activated order is removed", () => {

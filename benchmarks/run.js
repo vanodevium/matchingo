@@ -30,14 +30,14 @@ const matchingo = new Matchingo(TestSymbol, TestScales);
 
 const buyMs = phase(`${N} BUY`, () => {
 	for (let i = 1; i <= N; i++) {
-		matchingo.process(matchingo.newLimitOrder(i, BUY, PRICE, AMOUNT));
+		matchingo.submit(matchingo.newLimitOrder(i, BUY, PRICE, AMOUNT));
 	}
 });
 const heapBook = heapUsed();
 
 const sellMs = phase(`${N} SELL`, () => {
 	for (let i = 1; i <= N; i++) {
-		matchingo.process(matchingo.newLimitOrder(N + i, SELL, PRICE, AMOUNT));
+		matchingo.submit(matchingo.newLimitOrder(N + i, SELL, PRICE, AMOUNT));
 	}
 });
 const heapEnd = heapUsed();

@@ -2,7 +2,7 @@ import { BUY } from "./constants.js";
 import OrderedOrders from "./ordered-set-orders-queue.js";
 
 /**
- * Waiting STOP-LIMIT orders.
+ * Dormant stop orders (stop-limit, stop-market, trailing stop).
  * A BUY stop fires when the trade price is at or above the stop price.
  * A SELL stop fires when the trade price is at or below the stop price.
  * Each side has its own sorted book, so the engine reads only the levels that fire.
@@ -70,19 +70,9 @@ export default class StopBook {
 		while (first && fires(first.k)) {
 			const order = first.v.peekFront();
 			book.fastRemove(order);
-			order.activate();
 			activated.push(order);
 			first = levels.first();
 		}
-	}
-
-	cancel(key) {
-		const order = this.find(key);
-		if (order) {
-			this.remove(order);
-			return order;
-		}
-		return false;
 	}
 
 	find(key) {

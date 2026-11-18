@@ -25,4 +25,12 @@ export default class Emitter extends EventEmitter {
 	activated(data) {
 		this.emit("activated", { symbol: this.symbol, ...data });
 	}
+
+	bbo(data) {
+		this.emit("bbo", { symbol: this.symbol, ...data });
+	}
+
+	halt(data) {
+		this.emit("halt", { symbol: this.symbol, ...data });
+	}
 }

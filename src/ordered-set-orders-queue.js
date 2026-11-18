@@ -19,8 +19,6 @@ export default class OrderedSetOrdersQueue {
 			return false;
 		}
 
-		order.role = 80;
-
 		this.unique[order.id] = order;
 
 		const price = order[this.key];
@@ -120,35 +118,6 @@ export default class OrderedSetOrdersQueue {
 		queue.shift();
 		queue.push(order);
 		return true;
-	}
-
-	getBestIterator() {
-		const map = this.priceOrdersTreeMap;
-		const iter = map.iterator();
-		const first = iter.next();
-		if (first.done) {
-			return { key: undefined, value: undefined, valid: false, next() {} };
-		}
-		let current = first.value;
-		return {
-			get key() {
-				return current ? current.k : undefined;
-			},
-			get value() {
-				return current ? current.v : undefined;
-			},
-			get valid() {
-				return current !== undefined;
-			},
-			next() {
-				const next = iter.next();
-				if (next.done) {
-					current = undefined;
-				} else {
-					current = next.value;
-				}
-			},
-		};
 	}
 
 	/**

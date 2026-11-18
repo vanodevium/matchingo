@@ -1,58 +1,111 @@
 import {
 	BUY,
 	GTC,
+	GTD,
 	LIMIT,
-	MAKER,
 	MARKET,
 	SELL,
 	STOP_LIMIT,
-	TAKER,
+	STOP_MARKET,
+	STP_NONE,
+	TRAILING_STOP,
 } from "../constants.js";
 
+const RECORD_FIELDS = [
+	"id",
+	"type",
+	"side",
+	"price",
+	"stop",
+	"amount",
+	"open",
+	"shown",
+	"peak",
+	"tif",
+	"expiry",
+	"ttl",
+	"oco",
+	"traderID",
+	"stp",
+	"postOnly",
+	"quote",
+	"toLimit",
+	"trailOffset",
+	"trailPercent",
+	"timestamp",
+	"seq",
+];
+
 export default class Order {
-	constructor(symbol, id, type, side, price, amount, traderID = null) {
+	/**
+	 * Amounts are scaled integers. `amount` is the quantity of this run,
+	 * `open` is what is still unfilled (visible and hidden), `shown` is the
+	 * part visible in the book.
+	 */
+	constructor(symbol, id, type, side, price, amount) {
 		this.id = id;
+		this.symbol = symbol;
 		this.type = type;
 		this.side = side;
-		this.symbol = symbol;
-		this.price = price;
-		this.amount = amount;
-		this.traderID = traderID;
-
-		this.open_amount = amount;
-
-		this.oco = null;
-		this.tif = GTC;
-
-		this.role = TAKER;
 		this.opposite = side === BUY ? SELL : BUY;
+		this.price = price;
+		this.stop = 0;
+		this.amount = amount;
+		this.open = amount;
+		this.shown = amount;
+		this.peak = 0;
 
-		this.tradePrice = 0;
-		this.tradeAmount = 0;
+		this.tif = GTC;
+		this.expiry = 0;
+		this.ttl = 0;
+		this.oco = null;
+		this.traderID = null;
+		this.stp = STP_NONE;
 
-		this.deleted = false;
-		this.canceled = false;
-		this.activated = false;
-
-		this._isQuote = false;
 		this.postOnly = false;
-		this.peakAmount = 0;
+		this.quote = false;
+		this.toLimit = false;
+		this.trailOffset = 0;
+		this.trailPercent = 0;
+
+		this.timestamp = 0;
+		this.seq = 0;
+		this.canceled = false;
 	}
 
-	isMaker() {
-		return MAKER === this.role;
+	/**
+	 * Restore an order from the plain data of toRecord().
+	 * @param {string} symbol
+	 * @param {object} record
+	 * @returns {Order}
+	 */
+	static fromRecord(symbol, record) {
+		const order = new Order(
+			symbol,
+			record.id,
+			record.type,
+			record.side,
+			record.price,
+			record.amount,
+		);
+		for (const field of RECORD_FIELDS) {
+			if (record[field] !== undefined) {
+				order[field] = record[field];
+			}
+		}
+		return order;
 	}
 
-	hasSymbol(symbol) {
-		return this.symbol === symbol;
+	toRecord() {
+		const record = {};
+		for (const field of RECORD_FIELDS) {
+			record[field] = this[field];
+		}
+		return record;
 	}
 
-	isBuy() {
-		return this.side === BUY;
-	}
-
-	isSell() {
-		return this.side === SELL;
+	oppositeSide() {
+		return this.opposite;
 	}
 
 	isMarket() {
@@ -63,112 +116,56 @@ export default class Order {
 		return LIMIT === this.type;
 	}
 
-	isStopLimit() {
-		return STOP_LIMIT === this.type;
+	isStop() {
+		return (
+			this.type === STOP_LIMIT ||
+			this.type === STOP_MARKET ||
+			this.type === TRAILING_STOP
+		);
 	}
 
 	isQuote() {
-		return this._isQuote;
+		return this.quote;
 	}
 
-	getKey() {
-		return this.id;
-	}
-
-	oppositeSide() {
-		return this.opposite;
-	}
-
-	increase(amount) {
-		if (amount === 0) {
-			return false;
-		}
-
-		this.open_amount -= amount;
-		this.tradeAmount += amount;
-
-		if (this.open_amount < 0) {
-			throw new Error(`open amount is less then zero: ${JSON.stringify(this)}`);
-		}
-
-		if (this.open_amount > this.amount) {
-			throw new Error("open_amount is greater than amount");
-		}
-
-		if (this.open_amount === this.amount) {
-			this.status = "open";
-		} else if (this.amount > this.open_amount) {
-			this.status = this.open_amount === 0 ? "fulfilled" : "partial";
-		}
-
-		return true;
+	hiddenAmount() {
+		return this.open - this.shown;
 	}
 
 	setTIF(tif) {
 		this.tif = tif;
-	}
-
-	setMaker() {
-		this.role = MAKER;
-	}
-
-	setTaker() {
-		this.role = TAKER;
+		return this;
 	}
 
 	setOCO(id) {
 		this.oco = id;
+		return this;
 	}
 
-	setQuoteMode() {
-		if (this.type === MARKET) {
-			this._isQuote = true;
-		}
+	/**
+	 * Self-trade prevention: orders with the same traderID do not trade
+	 * with each other; the mode decides what happens instead.
+	 */
+	setSTP(traderID, mode) {
+		this.traderID = traderID;
+		this.stp = mode;
+		return this;
 	}
 
-	getMaxAmount(amount) {
-		return Math.min(this.open_amount, amount);
+	/**
+	 * Good-till-date: unix ms timestamp at which the order is canceled.
+	 */
+	setExpiry(timestamp) {
+		this.expiry = timestamp;
+		this.tif = GTD;
+		return this;
 	}
 
-	isFulfilled() {
-		return 0 === this.open_amount;
-	}
-
-	isOpen() {
-		return this.amount === this.open_amount;
-	}
-
-	isPartial() {
-		return this.amount > this.open_amount;
-	}
-
-	cancel() {
-		this.canceled = true;
-	}
-
-	isCanceled() {
-		return this.canceled;
-	}
-
-	delete() {
-		this.deleted = true;
-	}
-
-	isDeleted() {
-		return this.deleted;
-	}
-
-	activate() {
-		this.type = LIMIT;
-		this.activated = true;
-	}
-
-	isActivated() {
-		return this.activated;
-	}
-
-	resetTrade() {
-		this.tradeAmount = 0;
-		this.tradePrice = 0;
+	/**
+	 * Good-till-date: the order lives this many ms from the moment it is accepted.
+	 */
+	setTTL(ms) {
+		this.ttl = ms;
+		return this;
 	}
 }

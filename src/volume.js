@@ -30,50 +30,6 @@ export default class Volume {
 		return sum;
 	}
 
-	hasEnough(side, price, amount) {
-		const volume = this[side].getRaw();
-		const prices = this[side].geyKeys();
-
-		if (SELL === side) {
-			return this._hasEnough(
-				price,
-				amount,
-				prices,
-				volume,
-				(bestPrice, orderPrice) => orderPrice >= bestPrice,
-			);
-		}
-
-		if (BUY === side) {
-			return this._hasEnough(
-				price,
-				amount,
-				prices,
-				volume,
-				(bestPrice, orderPrice) => orderPrice <= bestPrice,
-			);
-		}
-
-		throw Error("hasEnough side");
-	}
-
-	_hasEnough(orderPrice, amount, prices, volume, comparator) {
-		let accumulator = 0;
-		let done = false;
-		prices.forEach((node) => {
-			if (done) {
-				return;
-			}
-			const bestPrice = node.k;
-			if (comparator(bestPrice, orderPrice) && accumulator < amount) {
-				accumulator += volume[bestPrice];
-			} else {
-				done = true;
-			}
-		});
-		return accumulator >= amount;
-	}
-
 	best(side) {
 		const first = this[side].geyKeys().first();
 		if (!first) return null;

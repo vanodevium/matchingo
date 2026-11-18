@@ -94,32 +94,32 @@ describe("decimal engine", () => {
 	};
 
 	test("0.1 + 0.2 = 0.3 leaves no residue after full fill", () => {
-		m.process(m.newLimitOrder(1, BUY, 10, 0.1));
-		m.process(m.newLimitOrder(2, BUY, 10, 0.2));
+		m.submit(m.newLimitOrder(1, BUY, 10, 0.1));
+		m.submit(m.newLimitOrder(2, BUY, 10, 0.2));
 		expect(m.depth()[TestSymbol][BUY]).toStrictEqual({ 10: 0.3 });
-		m.process(m.newMarketOrder(3, SELL, 0.3));
+		m.submit(m.newMarketOrder(3, SELL, 0.3));
 		expect(bookEmpty()).toBe(true);
 	});
 
 	test("1000 small market trades leave a clean book", () => {
-		m.process(m.newLimitOrder(1, SELL, 10, 100));
+		m.submit(m.newLimitOrder(1, SELL, 10, 100));
 		for (let i = 0; i < 1000; i++) {
-			m.process(m.newMarketOrder(10 + i, BUY, 0.1));
+			m.submit(m.newMarketOrder(10 + i, BUY, 0.1));
 		}
 		expect(bookEmpty()).toBe(true);
-		expect(m.order(1)).toBe(false);
+		expect(m.order(1)).toBeNull();
 	});
 
 	test("equal prices share one depth level", () => {
 		expect(() => m.newLimitOrder(1, BUY, 0.1 + 0.2, 1)).toThrow("too many");
-		m.process(m.newLimitOrder(2, BUY, "0.3", 1));
-		m.process(m.newLimitOrder(3, BUY, 0.3, 1));
+		m.submit(m.newLimitOrder(2, BUY, "0.3", 1));
+		m.submit(m.newLimitOrder(3, BUY, 0.3, 1));
 		expect(m.depth()[TestSymbol][BUY]).toStrictEqual({ 0.3: 2 });
 	});
 
 	test("quote buy at sub-unit price", () => {
-		m.process(m.newLimitOrder(1, SELL, 0.7, 10));
-		const r = m.process(m.newMarketBuyQuoteOrder(2, 7));
+		m.submit(m.newLimitOrder(1, SELL, 0.7, 10));
+		const r = m.submit(m.newMarketBuyQuoteOrder(2, 7));
 		expect(r.processed).toBe(7);
 		expect(r.left).toBe(0);
 		expect(r.trades.map((t) => t.amount)).toStrictEqual([7, 10]);
@@ -127,8 +127,8 @@ describe("decimal engine", () => {
 	});
 
 	test("quote buy: dust never overspends budget", () => {
-		m.process(m.newLimitOrder(1, SELL, 3, 10));
-		const r = m.process(m.newMarketBuyQuoteOrder(2, 10));
+		m.submit(m.newLimitOrder(1, SELL, 3, 10));
+		const r = m.submit(m.newMarketBuyQuoteOrder(2, 10));
 		expect(r.trades[1].amount).toBe(3.333);
 		expect(r.processed).toBe(9.999);
 		expect(r.left).toBe(0.001);
@@ -138,12 +138,12 @@ describe("decimal engine", () => {
 	test("trade results and volume events use decimal values", () => {
 		const events = [];
 		m.emitter.on("volume", ({ symbol: _s, ...data }) => events.push(data));
-		m.process(m.newLimitOrder(1, BUY, 10.111, 1.5));
-		const r = m.process(m.newMarketOrder(2, SELL, 1.5));
+		m.submit(m.newLimitOrder(1, BUY, 10.111, 1.5));
+		const r = m.submit(m.newMarketOrder(2, SELL, 1.5));
 		expect(r.trades.map((t) => [t.price, t.amount])).toStrictEqual([
 			[0, 1.5],
 			[10.111, 1.5],
 		]);
-		expect(events[0]).toStrictEqual({ side: BUY, price: 10.111, volume: 1.5 });
+		expect(events[0]).toMatchObject({ side: BUY, price: 10.111, volume: 1.5 });
 	});
 });

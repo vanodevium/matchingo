@@ -1,6 +1,5 @@
 import { BUY, BUY_KEY, SELL, SELL_KEY } from "./constants.js";
 import OrderedOrders from "./ordered-set-orders-queue.js";
-import PriceComparator from "./price-comparator.js";
 import Volume from "./volume.js";
 
 export default class OrderBook {
@@ -9,11 +8,6 @@ export default class OrderBook {
 		this[SELL] = new OrderedOrders("ASC", "price");
 		this[BUY] = new OrderedOrders("DESC", "price");
 		this.volume = new Volume(this.symbol);
-		this.comparator = new PriceComparator();
-	}
-
-	getBestIterator(order) {
-		return this[order.oppositeSide()].getBestIterator();
 	}
 
 	append(order) {

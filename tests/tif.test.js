@@ -18,7 +18,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 test("GTC: unfilled limit rests in book", () => {
-	const done = m.process(m.newLimitOrder(1, BUY, 10, 5));
+	const done = m.submit(m.newLimitOrder(1, BUY, 10, 5));
 	expect(done.canceled).toEqual([]);
 	expect(m.order(1)).toBeTruthy();
 });
@@ -28,13 +28,13 @@ test("GTC: unfilled limit rests in book", () => {
 // ---------------------------------------------------------------------------
 
 test("FOK limit: canceled when book has insufficient volume", () => {
-	m.process(m.newLimitOrder(1, SELL, 11, 11));
-	m.process(m.newLimitOrder(2, SELL, 12, 12));
-	m.process(m.newLimitOrder(3, SELL, 13, 13)); // total 36, need 40
+	m.submit(m.newLimitOrder(1, SELL, 11, 11));
+	m.submit(m.newLimitOrder(2, SELL, 12, 12));
+	m.submit(m.newLimitOrder(3, SELL, 13, 13)); // total 36, need 40
 
 	const o = m.newLimitOrder(4, BUY, 13, 40);
 	o.tif = FOK;
-	const done = m.process(o);
+	const done = m.submit(o);
 
 	expect(done.trades).toEqual([]);
 	expect(done.canceled).toContain(4);
@@ -43,13 +43,13 @@ test("FOK limit: canceled when book has insufficient volume", () => {
 });
 
 test("FOK limit: fills fully when book has enough", () => {
-	m.process(m.newLimitOrder(1, SELL, 11, 11));
-	m.process(m.newLimitOrder(2, SELL, 12, 12));
-	m.process(m.newLimitOrder(3, SELL, 13, 13));
+	m.submit(m.newLimitOrder(1, SELL, 11, 11));
+	m.submit(m.newLimitOrder(2, SELL, 12, 12));
+	m.submit(m.newLimitOrder(3, SELL, 13, 13));
 
 	const o = m.newLimitOrder(4, BUY, 13, 36);
 	o.tif = FOK;
-	const done = m.process(o);
+	const done = m.submit(o);
 
 	expect(done.processed).toBe(36);
 	expect(done.canceled).toEqual([]);
@@ -61,13 +61,13 @@ test("FOK limit: fills fully when book has enough", () => {
 // ---------------------------------------------------------------------------
 
 test("IOC limit: fills partial match, cancels remainder", () => {
-	m.process(m.newLimitOrder(1, SELL, 11, 11));
-	m.process(m.newLimitOrder(2, SELL, 12, 12));
-	m.process(m.newLimitOrder(3, SELL, 13, 13));
+	m.submit(m.newLimitOrder(1, SELL, 11, 11));
+	m.submit(m.newLimitOrder(2, SELL, 12, 12));
+	m.submit(m.newLimitOrder(3, SELL, 13, 13));
 
 	const o = m.newLimitOrder(4, BUY, 13, 40);
 	o.tif = IOC;
-	const done = m.process(o);
+	const done = m.submit(o);
 
 	expect(done.processed).toBe(36);
 	expect(done.left).toBe(4);
@@ -77,10 +77,10 @@ test("IOC limit: fills partial match, cancels remainder", () => {
 });
 
 test("IOC limit: fully filled — no cancel", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 10));
+	m.submit(m.newLimitOrder(1, SELL, 10, 10));
 	const o = m.newLimitOrder(2, BUY, 10, 10);
 	o.tif = IOC;
-	const done = m.process(o);
+	const done = m.submit(o);
 
 	expect(done.processed).toBe(10);
 	expect(done.canceled).toEqual([]);
@@ -89,7 +89,7 @@ test("IOC limit: fully filled — no cancel", () => {
 test("IOC limit: no match — entire order canceled", () => {
 	const o = m.newLimitOrder(1, BUY, 10, 5);
 	o.tif = IOC;
-	const done = m.process(o);
+	const done = m.submit(o);
 
 	expect(done.trades).toEqual([]);
 	expect(done.canceled).toContain(1);
@@ -101,11 +101,11 @@ test("IOC limit: no match — entire order canceled", () => {
 // ---------------------------------------------------------------------------
 
 test("market: FOK flag is overridden to IOC — partial fill is kept", () => {
-	m.process(m.newLimitOrder(1, SELL, 100, 5)); // only 5 available; market wants 10
+	m.submit(m.newLimitOrder(1, SELL, 100, 5)); // only 5 available; market wants 10
 
 	const o = m.newMarketOrder(2, BUY, 10);
 	o.tif = FOK; // ignored — becomes IOC
-	const done = m.process(o);
+	const done = m.submit(o);
 
 	// IOC behavior: fills 5, cancels remainder
 	expect(done.processed).toBe(5);
@@ -118,14 +118,14 @@ test("market: FOK flag is overridden to IOC — partial fill is kept", () => {
 // ---------------------------------------------------------------------------
 
 test("stop-limit FOK: fully canceled when activated with insufficient book", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newLimitOrder(2, SELL, 11, 3)); // only 3 below limit 12; stop wants 5
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newLimitOrder(2, SELL, 11, 3)); // only 3 below limit 12; stop wants 5
 
 	const stop = m.newStopLimitOrder(100, BUY, 10, 12, 5);
 	stop.tif = FOK;
-	m.process(stop);
+	m.submit(stop);
 
-	const result = m.process(m.newMarketOrder(3, BUY, 1));
+	const result = m.submit(m.newMarketOrder(3, BUY, 1));
 	expect(result.activated).toContain(100);
 
 	const activation = result.activations[0];
@@ -137,14 +137,14 @@ test("stop-limit FOK: fully canceled when activated with insufficient book", () 
 });
 
 test("stop-limit FOK: fully fills when activated with sufficient book", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newLimitOrder(2, SELL, 11, 10)); // 10 available
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newLimitOrder(2, SELL, 11, 10)); // 10 available
 
 	const stop = m.newStopLimitOrder(100, BUY, 10, 12, 5);
 	stop.tif = FOK;
-	m.process(stop);
+	m.submit(stop);
 
-	const result = m.process(m.newMarketOrder(3, BUY, 1));
+	const result = m.submit(m.newMarketOrder(3, BUY, 1));
 	const activation = result.activations[0];
 
 	expect(activation.processed).toBe(5);
@@ -153,15 +153,15 @@ test("stop-limit FOK: fully fills when activated with sufficient book", () => {
 });
 
 test("stop-limit IOC: cancels remainder when activated with insufficient book", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newLimitOrder(2, SELL, 11, 2)); // only 2 below limit 12; stop wants 10
-	m.process(m.newLimitOrder(3, SELL, 15, 10)); // above limit — won't match
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newLimitOrder(2, SELL, 11, 2)); // only 2 below limit 12; stop wants 10
+	m.submit(m.newLimitOrder(3, SELL, 15, 10)); // above limit — won't match
 
 	const stop = m.newStopLimitOrder(100, BUY, 10, 12, 10);
 	stop.tif = IOC;
-	m.process(stop);
+	m.submit(stop);
 
-	const result = m.process(m.newMarketOrder(4, BUY, 1));
+	const result = m.submit(m.newMarketOrder(4, BUY, 1));
 	const activation = result.activations[0];
 
 	expect(activation.processed).toBe(2);
@@ -171,14 +171,14 @@ test("stop-limit IOC: cancels remainder when activated with insufficient book", 
 });
 
 test("stop-limit IOC: no cancel when activated and fully fills", () => {
-	m.process(m.newLimitOrder(1, SELL, 10, 1));
-	m.process(m.newLimitOrder(2, SELL, 11, 10)); // enough for the stop
+	m.submit(m.newLimitOrder(1, SELL, 10, 1));
+	m.submit(m.newLimitOrder(2, SELL, 11, 10)); // enough for the stop
 
 	const stop = m.newStopLimitOrder(100, BUY, 10, 12, 5);
 	stop.tif = IOC;
-	m.process(stop);
+	m.submit(stop);
 
-	const result = m.process(m.newMarketOrder(3, BUY, 1));
+	const result = m.submit(m.newMarketOrder(3, BUY, 1));
 	const activation = result.activations[0];
 
 	expect(activation.processed).toBe(5);

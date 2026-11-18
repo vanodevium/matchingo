@@ -1,17 +1,13 @@
 /**
  * OCO (One-Cancels-the-Other) rules:
- * when one leg fills or activates, the sibling is immediately canceled.
- * Covers limit/stop pairs in both orders, and behavior after dump/restore.
+ * when an order executes to completion, its partner is canceled.
+ * A partial fill alone does not trigger it. A trigger for a partner that
+ * is not on the book yet is remembered.
  */
 
-import { BUY, LIMIT, SELL } from "../src/constants.js";
+import { BUY, SELL } from "../src/constants.js";
 import Matchingo from "../src/matchingo.js";
-import {
-	createTestPriceOrder,
-	createTestStopLimitPrice,
-	TestScales,
-	TestSymbol,
-} from "./constants.js";
+import { DecimalScales, TestScales, TestSymbol } from "./constants.js";
 
 let m;
 
@@ -20,70 +16,118 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Limit fills → stop sibling canceled
+// A taker that is complete cancels its partner
 // ---------------------------------------------------------------------------
 
-test("OCO: limit fills — stop sibling canceled", () => {
-	m.process(m.newLimitOrder(1, SELL, 100, 10));
+test("OCO: limit taker fully matched — stop partner canceled", () => {
+	m.submit(m.newLimitOrder(1, SELL, 100, 10));
 
-	const lim = m.newLimitOrder(2, BUY, 100, 10);
-	const stop = m.newStopLimitOrder(3, BUY, 110, 115, 10);
-	lim.setOCO(stop.getKey());
-	stop.setOCO(lim.getKey());
-	m.process(stop);
+	const lim = m.newLimitOrder(2, BUY, 100, 10).setOCO(3);
+	m.submit(m.newStopLimitOrder(3, BUY, 110, 115, 10));
 
-	const done = m.process(lim);
+	const done = m.submit(lim);
 	expect(done.processed).toBe(10);
-	expect(done.canceled).toContain(3);
+	expect(done.canceled).toEqual([3]);
 	expect(m.stopBook.find(3)).toBeFalsy();
 });
 
-test("OCO: limit fills — stop sibling NOT found after cancel", () => {
-	const oco1 = createTestStopLimitPrice(1, BUY, 7.77, 7.77, 11);
-	const oco2 = createTestPriceOrder(2, LIMIT, BUY, 7.77, 11);
-	oco1.setOCO(oco2.getKey());
-	oco2.setOCO(oco1.getKey());
+test("OCO: a partial fill alone does not cancel the partner", () => {
+	m.submit(m.newLimitOrder(1, SELL, 100, 4));
+	m.submit(m.newStopLimitOrder(3, BUY, 110, 115, 10));
 
-	m.process(createTestPriceOrder(13, LIMIT, SELL, 7.74, 13));
-	m.process(oco1);
-	const done = m.process(oco2);
+	const done = m.submit(m.newLimitOrder(2, BUY, 100, 10).setOCO(3));
+	expect(done.processed).toBe(4);
+	expect(done.stored).toBe(true);
+	expect(done.canceled).toEqual([]);
+	expect(m.stopBook.find(3)).toBeTruthy();
+});
 
-	expect(done.trades.length).toBe(2);
-	expect(done.canceled).toContain(1);
-	expect(m.order(1)).toBeFalsy();
+test("OCO: a market order that traded cancels the partner", () => {
+	m.submit(m.newLimitOrder(1, SELL, 100, 4));
+	m.submit(m.newStopLimitOrder(3, BUY, 110, 115, 10));
+
+	const done = m.submit(m.newMarketOrder(2, BUY, 10).setOCO(3));
+	expect(done.processed).toBe(4);
+	expect(done.canceled).toEqual([2, 3]);
+	expect(m.stopBook.find(3)).toBeFalsy();
+});
+
+test("OCO: a market order that did not trade leaves the partner", () => {
+	m.submit(m.newStopLimitOrder(3, BUY, 110, 115, 10));
+	const done = m.submit(m.newMarketOrder(2, BUY, 10).setOCO(3));
+	expect(done.canceled).toEqual([2]);
+	expect(m.stopBook.find(3)).toBeTruthy();
 });
 
 // ---------------------------------------------------------------------------
-// Stop fills → limit sibling canceled
+// A maker that is completely filled cancels its partner
 // ---------------------------------------------------------------------------
 
-test("OCO: stop activates and fills — limit sibling canceled", () => {
-	const lim = createTestPriceOrder(2, LIMIT, BUY, 7.77, 11);
-	const stop = createTestStopLimitPrice(1, BUY, 7.77, 7.77, 11);
-	stop.setOCO(lim.getKey());
-	lim.setOCO(stop.getKey());
+test("OCO: resting maker completely filled — partner canceled", () => {
+	m.submit(m.newLimitOrder(1, SELL, 100, 10).setOCO(2));
+	m.submit(m.newLimitOrder(2, BUY, 50, 10));
 
-	m.process(createTestPriceOrder(13, LIMIT, SELL, 7.74, 13));
-	m.process(lim);
-	const done = m.process(stop);
-
-	// stop was processed — lim was already matched → stop is the OCO-canceled one
-	expect(done.canceled).toContain(1);
+	const done = m.submit(m.newLimitOrder(3, BUY, 100, 10));
+	expect(done.canceled).toEqual([2]);
+	expect(m.order(2)).toBeNull();
 });
 
-test("OCO: reverse — limit processes first, stop processed second is instantly canceled", () => {
-	const oco1 = createTestStopLimitPrice(1, BUY, 7.77, 7.77, 11);
-	const oco2 = createTestPriceOrder(2, LIMIT, BUY, 7.77, 11);
-	oco1.setOCO(oco2.getKey());
-	oco2.setOCO(oco1.getKey());
+test("OCO: resting maker partly filled — partner stays", () => {
+	m.submit(m.newLimitOrder(1, SELL, 100, 10).setOCO(2));
+	m.submit(m.newLimitOrder(2, BUY, 50, 10));
 
-	m.process(createTestPriceOrder(13, LIMIT, SELL, 7.74, 13));
-	m.process(oco2); // limit fills, marks stop for cancel
+	const done = m.submit(m.newLimitOrder(3, BUY, 100, 4));
+	expect(done.canceled).toEqual([]);
+	expect(m.order(2)).toBeTruthy();
+});
 
-	const done = m.process(oco1); // stop is immediately OCO-canceled
+test("OCO: iceberg maker cancels its partner only when the total is filled", () => {
+	m.submit(m.newIcebergOrder(1, SELL, 100, 20, 5).setOCO(2));
+	m.submit(m.newLimitOrder(2, BUY, 50, 10));
+
+	expect(m.submit(m.newLimitOrder(3, BUY, 100, 5)).canceled).toEqual([]);
+	expect(m.submit(m.newLimitOrder(4, BUY, 100, 15)).canceled).toEqual([2]);
+});
+
+// ---------------------------------------------------------------------------
+// The partner arrives later
+// ---------------------------------------------------------------------------
+
+test("OCO: partner that arrives after the trigger is canceled at once", () => {
+	m.submit(m.newLimitOrder(13, SELL, 100, 13));
+	m.submit(m.newLimitOrder(2, BUY, 100, 11).setOCO(1));
+
+	const done = m.submit(m.newStopLimitOrder(1, BUY, 110, 115, 11));
 	expect(done.order.id).toBe(1);
 	expect(done.trades).toEqual([]);
-	expect(done.canceled).toContain(1);
+	expect(done.canceled).toEqual([1]);
+	expect(done.stored).toBe(false);
+	expect(m.order(1)).toBeNull();
+});
+
+test("OCO: the trigger is used once", () => {
+	m.submit(m.newLimitOrder(13, SELL, 100, 13));
+	m.submit(m.newLimitOrder(2, BUY, 100, 11).setOCO(1));
+	m.submit(m.newLimitOrder(1, BUY, 90, 1)); // canceled by the marker
+
+	expect(m.submit(m.newLimitOrder(1, BUY, 90, 1)).stored).toBe(true);
+});
+
+// ---------------------------------------------------------------------------
+// Activated stops
+// ---------------------------------------------------------------------------
+
+test("OCO: stop activates and fills completely — limit partner canceled", () => {
+	m = new Matchingo(TestSymbol, DecimalScales);
+	m.submit(m.newLimitOrder(13, SELL, 7.74, 13));
+	m.submit(m.newLimitOrder(2, BUY, 7.7, 11));
+	m.submit(m.newStopLimitOrder(1, BUY, 7.74, 7.77, 11).setOCO(2));
+
+	const done = m.submit(m.newMarketOrder(5, BUY, 1));
+	expect(done.activated).toEqual([1]);
+	expect(done.activations[0].processed).toBe(11);
+	expect(done.activations[0].canceled).toEqual([2]);
+	expect(m.order(2)).toBeNull();
 });
 
 // ---------------------------------------------------------------------------
@@ -91,41 +135,43 @@ test("OCO: reverse — limit processes first, stop processed second is instantly
 // ---------------------------------------------------------------------------
 
 test("OCO dump/restore: cancel propagates after restore", () => {
-	const lim = m.newLimitOrder(1, SELL, 100, 10);
-	const stop = m.newStopLimitOrder(2, SELL, 80, 79, 10);
-	lim.setOCO(2);
-	stop.setOCO(1);
-	m.process(lim);
-	m.process(stop);
+	m.submit(m.newLimitOrder(1, SELL, 100, 10).setOCO(2));
+	m.submit(m.newStopLimitOrder(2, SELL, 80, 79, 10).setOCO(1));
 
 	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(m.dump());
 
-	// A buy fills the limit — stop sibling must be canceled
-	const done = m2.process(m2.newLimitOrder(3, BUY, 100, 10));
+	const done = m2.submit(m2.newLimitOrder(3, BUY, 100, 10));
 	expect(done.trades.length).toBe(2);
 	expect(done.canceled).toContain(2);
 	expect(m2.stopBook.find(2)).toBeFalsy();
 });
 
-test("OCO dump/restore: stop activates and cancels limit sibling", () => {
-	const lim = m.newLimitOrder(1, SELL, 110, 10);
-	const stop = m.newStopLimitOrder(2, SELL, 90, 85, 10);
-	lim.setOCO(2);
-	stop.setOCO(1);
-	m.process(lim);
-	m.process(stop);
+test("OCO dump/restore: pending triggers survive", () => {
+	m.submit(m.newLimitOrder(13, SELL, 100, 13));
+	m.submit(m.newLimitOrder(2, BUY, 100, 11).setOCO(1));
 
 	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(m.dump());
 
-	m2.process(m2.newLimitOrder(3, BUY, 85, 10)); // bid for the stop to fill against
+	const done = m2.submit(m2.newStopLimitOrder(1, BUY, 110, 115, 11));
+	expect(done.canceled).toEqual([1]);
+});
 
-	// market sell crosses below 90, triggering stop 2
-	const done = m2.process(m2.newMarketOrder(4, SELL, 1));
+test("OCO dump/restore: stop activates and cancels limit sibling", () => {
+	m.submit(m.newLimitOrder(1, SELL, 110, 10).setOCO(2));
+	m.submit(m.newStopLimitOrder(2, SELL, 90, 85, 10).setOCO(1));
+
+	const m2 = new Matchingo(TestSymbol, TestScales);
+	m2.restore(m.dump());
+
+	m2.submit(m2.newLimitOrder(3, BUY, 85, 20)); // bid for the stop to fill against
+
+	// market sell trades below 90, triggering stop 2
+	const done = m2.submit(m2.newMarketOrder(4, SELL, 1));
 	expect(done.activated).toContain(2);
 
 	const activation = done.activations[0];
 	expect(activation.canceled).toContain(1); // limit sibling canceled
-	expect(m2.order(1)).toBeFalsy();
+	expect(m2.order(1)).toBeNull();
 });

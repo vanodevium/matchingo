@@ -14,22 +14,22 @@ beforeEach(() => {
 });
 
 test("post-only: rests when book is empty", () => {
-	const done = m.process(m.newPostOnlyLimitOrder(1, BUY, 100, 10));
+	const done = m.submit(m.newPostOnlyLimitOrder(1, BUY, 100, 10));
 	expect(done.canceled).toEqual([]);
 	expect(m.order(1)).toBeTruthy();
 });
 
 test("post-only: rests when buy price is below best ask", () => {
-	m.process(m.newLimitOrder(2, SELL, 101, 10));
-	const done = m.process(m.newPostOnlyLimitOrder(1, BUY, 100, 5));
+	m.submit(m.newLimitOrder(2, SELL, 101, 10));
+	const done = m.submit(m.newPostOnlyLimitOrder(1, BUY, 100, 5));
 	expect(done.canceled).toEqual([]);
 	expect(m.order(1)).toBeTruthy();
 });
 
 test("post-only: canceled when buy price crosses ask", () => {
-	m.process(m.newLimitOrder(2, SELL, 100, 10));
+	m.submit(m.newLimitOrder(2, SELL, 100, 10));
 
-	const done = m.process(m.newPostOnlyLimitOrder(1, BUY, 100, 5));
+	const done = m.submit(m.newPostOnlyLimitOrder(1, BUY, 100, 5));
 	expect(done.canceled).toContain(1);
 	expect(done.trades).toEqual([]);
 	expect(m.order(1)).toBeFalsy();
@@ -37,9 +37,9 @@ test("post-only: canceled when buy price crosses ask", () => {
 });
 
 test("post-only: canceled when sell price crosses bid", () => {
-	m.process(m.newLimitOrder(2, BUY, 100, 10));
+	m.submit(m.newLimitOrder(2, BUY, 100, 10));
 
-	const done = m.process(m.newPostOnlyLimitOrder(1, SELL, 100, 5));
+	const done = m.submit(m.newPostOnlyLimitOrder(1, SELL, 100, 5));
 	expect(done.canceled).toContain(1);
 	expect(done.trades).toEqual([]);
 	expect(m.order(1)).toBeFalsy();
@@ -47,7 +47,7 @@ test("post-only: canceled when sell price crosses bid", () => {
 });
 
 test("post-only: persists through dump/restore", () => {
-	m.process(m.newPostOnlyLimitOrder(1, BUY, 100, 10));
+	m.submit(m.newPostOnlyLimitOrder(1, BUY, 100, 10));
 
 	const m2 = new Matchingo(TestSymbol, TestScales);
 	m2.restore(m.dump());

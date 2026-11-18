@@ -1,301 +1,315 @@
-# Matchingo - Product Specification
-
-This document describes the product `matchingo`.
-It uses Simplified Technical English (ASD-STE100): short sentences, active voice, and one word for one meaning.
+# matchingo — Order Book Matching Engine
 
 ## 1. Purpose
 
-Matchingo is a matching engine for a trading market.
-It is a JavaScript library for Node.js.
-It runs in memory. It has one order book for each symbol.
-Its goal is high speed.
-It is a matching engine only. It does not store accounts or balances. It does not check that an order ID is unique over time.
-The user of the library does these tasks.
-
-## 2. Definitions
-
-| Term           | Meaning                                                                                          |
-| -------------- | ------------------------------------------------------------------------------------------------ |
-| Symbol         | A pair of two currencies, for example `BTC/USD`.                                                 |
-| Base currency  | The first currency of the symbol (`BTC`).                                                        |
-| Quote currency | The second currency of the symbol (`USD`).                                                       |
-| Order book     | The list of open LIMIT orders. It has a BUY side and a SELL side.                                |
-| Stop book      | The list of STOP-LIMIT orders that wait for activation.                                          |
-| Taker          | The order that you process now.                                                                  |
-| Maker          | An order that is already in the order book.                                                      |
-| Volume         | The sum of open amounts at one price.                                                            |
-| Depth          | The volume at all prices, for both sides.                                                        |
-| OCO            | "One cancels the other". Two linked orders. When one order trades, the engine cancels the other. |
-
-## 3. Scope
-
-### 3.1 In scope
-
-- Create orders.
-- Match orders.
-- Cancel orders.
-- Activate STOP-LIMIT orders.
-- Cancel OCO orders.
-- Report volume and depth.
-- Send events.
-
-### 3.2 Out of scope
-
-- Network API.
-- Storage on disk.
-- User accounts and balances.
-- Fees.
-
-The "state backup and restore" function is not available now. It is a future feature.
-
-## 4. Installation and entry point
-
-- Package name: `matchingo`. Version: `0.0.1`. Licence: MIT.
-- Module type: ES module.
-- Entry point: `index.js`. It exports the `Matchingo` class as the default export.
-- The only runtime dependency is `denque`.
-- The package is not yet published. Use `git clone`.
-
-## 5. Constants
-
-| Name                   | Value | Use                                                |
-| ---------------------- | ----- | -------------------------------------------------- |
-| `Matchingo.BUY`        | 1     | Order side.                                        |
-| `Matchingo.SELL`       | 2     | Order side.                                        |
-| `Matchingo.MARKET`     | 10    | Order type.                                        |
-| `Matchingo.LIMIT`      | 20    | Order type.                                        |
-| `Matchingo.STOP_LIMIT` | 30    | Order type.                                        |
-| `Matchingo.FOK`        | 40    | Time in force.                                     |
-| `Matchingo.IOC`        | 50    | Time in force.                                     |
-| GTC                    | 60    | Time in force. This is the default for new orders. |
-| TAKER                  | 70    | Order role.                                        |
-| MAKER                  | 80    | Order role.                                        |
-
-## 6. Order types
-
-### 6.1 MARKET
-
-- A MARKET order has no price.
-- It trades at the best prices in the order book until its amount is zero or the book is empty.
-- The engine sets its time in force to IOC. The engine cancels the unfilled part.
-- The engine never puts a MARKET order in the order book.
-- Two MARKET orders can never match.
-
-### 6.2 LIMIT
-
-- A LIMIT order has a price and an amount.
-- A BUY order trades with SELL orders at the same price or lower.
-- A SELL order trades with BUY orders at the same price or higher.
-- The trade price is the price of the maker order.
-- The engine puts the unfilled part in the order book, unless the order is canceled.
-
-### 6.3 STOP-LIMIT
-
-- A STOP-LIMIT order has a stop price, a limit price, and an amount.
-- The engine puts it in the stop book. It does not trade at once.
-- A BUY stop activates when the trade price is at or above the stop price.
-  A SELL stop activates when the trade price is at or below the stop price.
-- The engine checks the stop orders after each trade, with the price of that trade. A match without a trade does not activate a stop order.
-- An activated order changes its type to LIMIT. The engine processes it like a new LIMIT order after the current order is complete.
-  The engine puts the unfilled part in the order book.
-- The engine lists the order ID in the `activated` field of the result.
-
-## 7. Time in force
-
-Time in force applies to LIMIT orders.
-
-| Value | Name                | Behavior                                                                                                                                  |
-| ----- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| GTC   | Good till canceled  | The unfilled part stays in the order book. This is the default.                                                                           |
-| IOC   | Immediate or cancel | The engine trades what it can. It cancels the unfilled part.                                                                              |
-| FOK   | Fill or kill        | The engine checks the volume first. If the volume is not enough to fill the full amount, the engine cancels the order and makes no trade. |
-
-Set the value with `order.setTIF(tif)`.
-
-## 8. Amount rules
+matchingo is a single-instrument **limit order book** and **matching engine**. It accepts orders, matches them against resting liquidity by **price-time priority**, keeps the remainder on the book when allowed, and reports every outcome (trades, cancellations, activations) both as a return value and as an event stream.
 
-Each order must have an `amount`.
-
-- For MARKET SELL and for all LIMIT orders, the amount is in base currency.
-- For MARKET BUY, you can use the quote currency. This is "quote mode".
-- Use quote mode to prevent double spending.
-  The caller can then freeze the exact quote amount on the balance of the user.
-- In quote mode, the engine buys `floor(quote * 10^amountScale / price)` base units from each maker order.
-  It charges `ceil(base * price / 10^amountScale)` quote units.
-  It never spends more than the amount of the order.
-- If the rest of the amount cannot buy one base unit, this rest is dust. The engine cancels the dust.
-- Quote mode is only valid for MARKET orders.
-  The engine ignores `setQuoteMode()` for other order types.
-
-### 8.1 Numbers and scales
+It is deterministic: given the same configuration, the same starting state and the same ordered sequence of commands (with the same clock readings), it always produces the same book, the same trades and the same IDs. This property underlies crash recovery (WAL replay) and snapshotting.
 
-- The engine uses integers inside. It does not use floating-point math for prices and amounts.
-- The caller sets `priceScale` and `amountScale` (digits after the point, from 0 to 15). There is no default.
-  `priceScale` is also the scale of quote amounts.
-- The caller can pass a number or a string.
-- The engine rejects a value that has more digits than the scale, a negative value, zero, `NaN`, and a value above 2^53 after scaling.
-- The engine rejects an order if `price * amount` (as integers) is above 2^53.
-- The engine converts the integers back to decimals in `Done`, events, and `depth()`.
-
-## 9. Public API
-
-### 9.1 Constructor
-
-`new Matchingo(symbol, { priceScale, amountScale, emitter })`
-
-| Argument      | Type    | Description                                                     |
-| ------------- | ------- | --------------------------------------------------------------- |
-| `symbol`      | string  | Required. The constructor throws an error if it is empty.       |
-| `priceScale`  | integer | Required. Digits after the point for prices and quote amounts.  |
-| `amountScale` | integer | Required. Digits after the point for base amounts.              |
-| `emitter`     | boolean | Optional. If `true`, the engine sends events. Default: `false`. |
+All prices and quantities are **fixed-point decimals** (no binary floating point), so arithmetic is exact and comparisons are reliable.
 
-`Matchingo.decimalFrom(value, scale)` returns the scaled integer of a number or string.
-
-### 9.2 Order factories
+## 2. Core Concepts
 
-| Method                                             | Result                         |
-| -------------------------------------------------- | ------------------------------ |
-| `newMarketOrder(id, side, baseAmount)`             | MARKET order, base amount.     |
-| `newMarketBuyQuoteOrder(id, quoteAmount)`          | MARKET BUY order, quote mode.  |
-| `newMarketSellQuoteOrder(id, quoteAmount)`         | MARKET SELL order, quote mode. |
-| `newLimitOrder(id, side, price, amount)`           | LIMIT order.                   |
-| `newStopLimitOrder(id, side, stop, price, amount)` | STOP-LIMIT order.              |
+| Concept            | Meaning                                                                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Side**           | BUY (bids) or SELL (asks).                                                                                                             |
+| **Bid side**       | Resting buy orders. Best price = highest.                                                                                              |
+| **Ask side**       | Resting sell orders. Best price = lowest.                                                                                              |
+| **Price level**    | All resting orders at one price on one side, kept as a FIFO queue.                                                                     |
+| **Maker**          | The resting order that provides liquidity.                                                                                             |
+| **Taker**          | The incoming order that consumes liquidity.                                                                                            |
+| **Stop book**      | A separate store of dormant stop orders, keyed by stop price. They are not part of visible liquidity and cannot trade until activated. |
+| **Quote quantity** | A quantity expressed in money (price × amount) instead of units. Only used by market-quote orders.                                     |
+| **Sequence**       | A counter that increases by one for every accepted new order (including the new order of a replace).                                   |
+| **Trade ID**       | A counter that increases by one for every individual fill.                                                                             |
 
-The `id` is a string or a number. It must be unique for the symbol.
-
-### 9.3 Order methods
-
-- `order.setTIF(tif)` sets the time in force.
-- `order.setOCO(id)` links the order to another order ID.
-
-### 9.4 Engine methods
-
-| Method           | Description                                                                                                      |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `process(order)` | Match the order. See section 10.                                                                                 |
-| `cancel(id)`     | Remove an order from the order book or the stop book. Return `true` if the order existed. Return `false` if not. |
-| `order(id)`      | Return the open order with this ID, or nothing.                                                                  |
-| `depth()`        | Return the volume at each price. See section 11.                                                                 |
-| `add(order)`     | Put an order in the order book or stop book without matching. Used internally.                                   |
-
-### 9.5 Errors
-
-The engine throws an error in these cases:
-
-- The symbol of the order is not the symbol of the engine.
-- A MARKET order goes into the order book.
-- Two MARKET orders try to match.
-- A trade makes the open amount of an order less than zero.
-- A price or amount is not valid (see section 8.1).
-- A scale is missing or not valid.
-
-## 10. Processing rules
-
-`process(order)` does these steps in this sequence:
-
-1. If `order` is empty, return nothing.
-2. If an open order has the same ID, return `false`. The engine does nothing else.
-3. Clear the data of the previous call.
-4. If another order already canceled this order through OCO, cancel it and return the result.
-5. If the order is STOP-LIMIT, put it in the stop book and return `true`.
-6. If the order is MARKET, set the time in force to IOC.
-7. If the order is LIMIT with FOK and the volume is not enough, cancel it and return the result.
-8. Match the order against the best prices of the opposite side, from best to worst.
-9. After each trade, activate the STOP-LIMIT orders that the trade price crosses.
-10. For IOC orders, cancel the unfilled part.
-11. Put the unfilled part of a LIMIT order in the order book.
-12. Return the result. For each activated STOP-LIMIT order, in the order of activation, do steps 3 to 12 again. Put the result in `activations`.
-
-Within one price level, the engine matches orders by time. The oldest order trades first.
-The engine matches price levels by price. The best price trades first.
-
-The return value of `process()` is one of these:
-
-| Value         | Case                                    |
-| ------------- | --------------------------------------- |
-| `Done` object | MARKET and LIMIT orders.                |
-| `true`        | The engine accepted a STOP-LIMIT order. |
-| `false`       | The ID is not unique.                   |
-| nothing       | The order is empty.                     |
-
-### 10.1 OCO rules
-
-- Link two orders. Call `setOCO(otherId)` on each order.
-- When one order trades, the engine cancels the other order.
-- The other order can be in the order book or in the stop book.
-- The engine also cancels a linked maker order that it finds during matching.
-
-### 10.2 Done object
-
-| Field         | Description                                                                                                                                     |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `order`       | The order that the caller processed. It has `id`, `price`, `isQuote`, `amount`, and `role`.                                                     |
-| `trades`      | The list of trades. If it has items, the first item is the processed order. Each item has `id`, `price`, `isQuote`, `amount`, and `role`.       |
-| `processed`   | The amount that the engine traded in this call. It can be zero.                                                                                 |
-| `left`        | The amount that the engine did not trade in this call. It can be zero.                                                                          |
-| `canceled`    | The IDs of orders that the engine canceled in this call. It can be empty.                                                                       |
-| `activated`   | The IDs of STOP-LIMIT orders that the engine activated in this call. It can be empty.                                                           |
-| `activations` | The `Done` objects of the activated STOP-LIMIT orders, in the order of activation. Each one has the same fields as this table. It can be empty. |
-
-In quote mode, `processed` and the trade amounts are in quote currency.
-
-## 11. Depth and volume
-
-`depth()` returns this structure:
-
-```json
-{ "BTC/USD": { "1": { "10.111": 10 }, "2": {} } }
-```
-
-- The key of each side is the side constant (`1` BUY, `2` SELL). The key of each price level is the price. The value is the total open amount at this price.
-- The engine updates the volume when it adds, trades, or cancels a LIMIT order.
-- The engine does not count MARKET orders in the volume.
-- The engine does not count STOP-LIMIT orders in the volume.
-
-## 12. Events
-
-If `emit` is `true`, the engine sends events.
-Listen to them with `matchingo.emitter.on(symbol, (header, data) => {})`.
-The emitter is a Node.js `EventEmitter`. The event name is the symbol.
-
-| Event type  | When                           | Data                                   |
-| ----------- | ------------------------------ | -------------------------------------- |
-| `volume`    | The volume at a price changes. | `side`, `price`, `volume`              |
-| `depth`     | Someone calls `depth()`.       | `depth`                                |
-| `trade`     | A trade happens.               | `trade` (see `trades` in section 10.2) |
-| `canceled`  | The engine cancels an order.   | `id`                                   |
-| `activated` | A STOP-LIMIT order activates.  | `id`                                   |
-
-The `header` argument has `symbol` and `type`.
-
-## 13. Non-functional requirements
-
-- **Speed.** Matching must be fast.
-  The engine uses a skip list and a double-ended queue (`denque`) for the order book.
-  These structures give fast insert, remove, and best-price access.
-- **Correctness.** Tests must cover all order types, time in force values, OCO, stop activation, volume, and events.
-  A parity test compares the results with a Go implementation.
-- **Single thread.** The engine has no locks. One caller at a time can use one engine instance.
-- **Memory.** All state is in memory. A restart removes all state.
-
-## 14. Project layout
-
-| Path                                                                                | Content                                     |
-| ----------------------------------------------------------------------------------- | ------------------------------------------- |
-| `index.js`                                                                          | Package entry point.                        |
-| `src/matchingo.js`                                                                  | Engine class.                               |
-| `src/order-book.js`, `src/stop-book.js`                                             | Order book and stop book.                   |
-| `src/ordered-set-orders-queue.js`, `src/skip-list.js`, `src/ordered-set-numbers.js` | Sorted data structures.                     |
-| `src/price-comparator.js`                                                           | Trade price rules.                          |
-| `src/volume.js`                                                                     | Volume and FOK check.                       |
-| `src/emmiter.js`                                                                    | Event emitter.                              |
-| `src/models/`                                                                       | `Order`, `StopLimitOrder`, `Trade`, `Done`. |
-| `tests/`                                                                            | Vitest tests.                               |
-| `benchmarks/run.js`                                                                 | Speed tests (`mitata`).                     |
-| `examples/`                                                                         | Usage examples.                             |
-
-## 15. Tools
-
-- Test: `npm test` (Vitest).
-- Format: `npm run fix` (Prettier and Biome).
+### Invariants
+
+- A price level exists only while it contains at least one order.
+- Orders at the same price are served strictly in arrival order (time priority).
+- A trade always executes at the **maker's price**, never the taker's limit.
+- The best bid is always strictly lower than the best ask after any command completes (crossing orders match immediately; post-only crossing orders are rejected from resting).
+- An order ID is unique across resting and dormant (stop) orders.
+- Dormant stop orders never match and never appear in depth, best bid/ask or level volume.
+
+## 3. Matching Algorithm
+
+### 3.1 Priority
+
+1. **Price priority**: the buy side matches the lowest ask first; the sell side matches the highest bid first.
+2. **Time priority**: within a price level, the oldest resting order is filled first.
+
+### 3.2 Generic matching loop
+
+For an incoming order with remaining quantity _Q_:
+
+1. Look at the best opposite price level.
+2. Stop if _Q_ = 0, the opposite side is empty, or (for limit orders) the best opposite price no longer satisfies the limit: a BUY limit crosses while `ask ≤ limit`, a SELL limit crosses while `bid ≥ limit`. Market orders have no price limit.
+3. Walk the level's queue from the oldest order:
+   - If _Q_ < maker quantity: the maker is **partially filled** (keeps its queue position, quantity reduced), *Q* becomes 0.
+   - Otherwise the maker is **fully filled** and removed; _Q_ decreases by the maker's quantity.
+   - Each fill creates one trade at the level price and increments the trade ID.
+4. Move to the next-best level and repeat.
+
+After the loop the fate of the remainder depends on order type and time-in-force (§4, §5).
+
+### 3.3 Result report
+
+Every accepted order produces a result containing:
+
+- **Order**: the incoming order.
+- **Trades**: the first entry is a **summary of the taker** (total matched quantity); the following entries are one per maker fill (maker ID, price, quantity). Empty if nothing traded.
+- **Processed** (matched amount), **Left** (unmatched amount), **Quantity** (original amount for this run).
+- **Stored**: whether the remainder now rests on the book.
+- **Canceled**: IDs of every order canceled as a side effect (the incoming order itself, STP victims, OCO partners, expired orders).
+- **Activated / Activations**: stop orders triggered by this order's trades, and the nested results of processing each of them.
+- **Sequence**: the sequence number assigned to the command.
+
+### 3.4 Side effects of a trade
+
+Whenever at least one fill happened at a price level, the following run in this order:
+
+1. **Circuit breaker check** (§9.2), if enabled.
+2. **Trailing stop adjustment** (§4.6) using that level price as the trade price.
+3. **Stop activation**: stops whose trigger is met by the level price are collected (§4.5). They are processed only after the current order has finished its own matching (§4.5).
+
+## 4. Order Types
+
+### 4.1 Limit order
+
+Has a price and quantity. Matches while the opposite side crosses its price; any remainder **rests** at its limit price at the back of that level's queue (subject to TIF).
+
+- If nothing matched at all, the whole order rests.
+- If partly matched, the remainder rests with the reduced quantity.
+- If fully matched, it never rests.
+
+### 4.2 Market order
+
+Has a side and quantity but no price. Takes liquidity at any price until filled or the opposite side is empty. **Never rests**: any unfilled remainder is canceled and reported in `Canceled`.
+
+### 4.3 Market quote order
+
+A market order whose quantity is a **money budget**. At each price level the engine converts the remaining budget to units (`budget ÷ level price`), fills what it can, and subtracts the money actually spent (`filled units × level price`). Matching stops when the budget is exhausted or cannot buy any unit at the best price (dust). The unspent remainder is canceled. Quote orders are exempt from lot-size checks since the quantity is not a number of units.
+
+### 4.4 Market-to-limit order
+
+A market order that, after consuming liquidity, **rests its remainder as a limit order priced at the last trade price** (the price of its final fill) instead of being canceled. If it made no fill at all, or was stopped by self-trade prevention, it is canceled like a plain market order.
+
+### 4.5 Stop orders (stop-limit and stop-market)
+
+A stop order is dormant until the market trades through its **stop price**; then it becomes a live order:
+
+- **Stop-limit** → becomes a limit order at its limit price.
+- **Stop-market** → becomes a market order.
+
+**Trigger rules** (evaluated against the price of each traded price level):
+
+- BUY stop triggers when `stop price ≤ trade price` (price rose to the stop).
+- SELL stop triggers when `stop price ≥ trade price` (price fell to the stop).
+
+Important properties:
+
+- Triggering is driven **only by trades**. Submitting a stop order never triggers it immediately, even if the last trade price is already beyond the stop; it waits for the next qualifying trade.
+- Stops are collected buy-side first then sell-side. Within a side they activate in order of stop price (BUY: lowest first, SELL: highest first), and in arrival order within the same stop price.
+- Activated orders are **processed after** the order that caused the trade finishes, one by one. Their own trades can in turn trigger further stops (cascade). Each activation is reported nested in `Activations`.
+- An activated stop-limit that finds no liquidity rests like any limit order; an activated stop-market that finds none is canceled.
+- A stop-limit may carry a time-in-force that applies once it activates.
+- Dormant stops can be canceled, modified (§6.4), expired (GTD) or linked via OCO.
+
+### 4.6 Trailing stop order
+
+A stop-market order whose stop price **follows the market at a fixed distance**, in absolute units or as a percentage of the trade price (strictly between 0 and 100).
+
+On every trade at price _P_, each dormant trailing stop recomputes a candidate:
+
+- SELL: `candidate = P − offset`; the stop moves **up** only if the candidate is higher than the current stop.
+- BUY: `candidate = P + offset`; the stop moves **down** only if the candidate is lower than the current stop.
+
+For a percentage trail, `offset = P × percent / 100`. The stop never moves in the unfavorable direction, so it ratchets protectively. A moved stop is re-queued at the back of its new stop-price level. Adjustment happens before the activation check of the same trade, and trailing stops are processed in creation order so the result is deterministic. Once activated, it behaves as a plain market order.
+
+### 4.7 Iceberg order
+
+A limit order showing only a **peak** (visible) quantity while the rest of the **total** is hidden. The peak must be smaller than the total.
+
+- The book (depth, volume, queue) only sees the visible slice.
+- When the visible slice is completely filled, the next slice (the smaller of peak and remaining hidden) is **re-posted at the back of the queue**, so each refill loses time priority.
+- For FOK checks the whole total (visible + hidden) must be fillable.
+
+### 4.8 Post-only order
+
+A limit order that must **add** liquidity. If, at arrival, it would immediately match (the best opposite price crosses its limit), it is **canceled, not rejected and never traded**. Otherwise it rests normally.
+
+### 4.9 Good-till-date (GTD) order
+
+A limit or stop order that carries an **expiry timestamp** (or a TTL, a duration added to the book clock at the moment of acceptance). It is canceled once the clock reaches its expiry (`expiry ≤ now`). An order whose expiry is already in the past is rejected. TTL works only with GTC/unset time-in-force and never with market orders.
+
+See §8 for how expiry is enforced.
+
+## 5. Time-in-Force
+
+| TIF               | Behavior                                                                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **GTC** (default) | Remainder rests until filled or canceled.                                                                                                                                           |
+| **IOC**           | Match what is possible immediately; the unmatched remainder is canceled and never rests.                                                                                            |
+| **FOK**           | Before matching, check that the **entire** quantity can be filled at prices within the limit. If not, the order is canceled with **no trades at all**. If yes, it fills completely. |
+| **GTD**           | Rests until its expiry time (§4.9).                                                                                                                                                 |
+
+The FOK feasibility check sums resting volume from the best level outward while levels still satisfy the limit price. FOK cannot be combined with self-trade prevention (rejected as invalid), because STP could make a pre-checked fill impossible.
+
+## 6. Order Management Operations
+
+### 6.1 Submit
+
+Validation, in order: trading not halted; order well-formed (known type, valid side, not already canceled); quantity > 0; quantity/price within decimal precision; instrument rules (§9.3); FOK/STP compatibility; TTL compatibility; expiry not in the past; ID not already in use. A rejected order changes nothing and is not logged to the WAL.
+
+Accepted orders: expired orders are purged if the clock passed the earliest expiry (§8); a creation timestamp is set (the book clock's reading, unless the caller already stamped the order with its own time, which is kept and saves the clock read); the sequence number increments; then the order is dispatched to market / limit / stop handling.
+
+### 6.2 Cancel
+
+Removes a resting or dormant order by ID, marks it canceled and emits a cancel event. Unknown ID → nothing happens. Cancel works even while trading is halted.
+
+### 6.3 Modify a resting limit order
+
+- **Same price and new quantity ≤ current** (quantity decrease): done **in place**; the order keeps its time priority. No new matching occurs.
+- **Any other change** (price change or quantity increase): the order loses priority; it is removed and re-submitted as a fresh limit order at the back of the new level and can match immediately if it now crosses.
+
+Not allowed for stop orders, unknown orders or while halted. New values must satisfy instrument rules.
+
+### 6.4 Modify a dormant stop order
+
+Changes stop price, limit price (ignored for stop-market) and quantity. The order is removed and re-inserted at the back of its new stop-price level (priority lost).
+
+### 6.5 Replace
+
+An **atomic cancel-and-submit**: the new order is fully validated _before_ anything is touched; if validation fails the old order stays untouched. The new order may reuse the old ID. It goes to the back of its queue and matches as a normal new order. The old ID is listed first in the result's `Canceled`.
+
+### 6.6 Queries
+
+- Look up an order by ID.
+- Best bid / best ask (price and total volume at that level; empty if none).
+- Volume at a specific price on a side.
+- **Market price estimate**: total cost (buying) or proceeds (selling) of consuming a given quantity from the opposite side level by level; fails if the book lacks enough volume. Does not change the book.
+- **Depth**: all price levels with aggregate volume per side.
+
+## 7. Linked and Protective Mechanisms
+
+### 7.1 OCO (one-cancels-the-other)
+
+An order may name another order ID as its OCO partner. When an order **executes to completion** (a taker that is fully matched, a market order that traded, or a resting maker that is completely filled), its partner is canceled.
+
+- A **partial fill alone does not trigger** OCO.
+- If the partner is not on the book yet, the trigger is remembered; when the partner later arrives it is canceled immediately instead of being processed.
+- Partners may be limit, stop or dormant orders.
+
+### 7.2 Self-trade prevention (STP)
+
+An order may be tagged with a participant ID and an STP mode. When the incoming (taker) order would trade against a resting order of the **same participant**, the taker's mode decides:
+
+| Mode              | Effect                                                                                                                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| None              | Self-trade is allowed.                                                                                                                                                            |
+| **Cancel newest** | The incoming order's remainder stops matching and is canceled; the resting order stays.                                                                                           |
+| **Cancel oldest** | The resting order is canceled; the incoming order continues matching further orders.                                                                                              |
+| **Cancel both**   | The resting order is canceled and the incoming remainder stops and is canceled.                                                                                                   |
+| **Decrement**     | Both are reduced by the overlapping amount **without producing a trade**. If the resting order is fully consumed it is canceled; if the incoming order is fully consumed it ends. |
+
+Trades earlier in the same run remain valid. Decrement on a market-quote order falls back to cancel-newest (a money budget cannot be reduced in units).
+
+## 8. Expiry Enforcement (GTD)
+
+The book tracks a lower bound of the earliest expiry time. Expiry is enforced:
+
+- **Lazily**: before every new order is processed, if the clock has reached the earliest expiry, all due orders are canceled (in expiry order, ties by ID). Their IDs appear in the new order's `Canceled`.
+- **Explicitly**: an expire operation can be invoked at any time (e.g., from a timer) to cancel everything due at a given instant on an otherwise idle book.
+
+The time source is injectable so tests and replays are fully deterministic.
+
+## 9. Market Controls
+
+### 9.1 Trading halt
+
+A manual halt makes the book **reject all new orders and amendments** (submit, replace, modify). Cancels and expiry still work, and the book contents stay intact. Resume re-opens trading. State changes are announced as events.
+
+### 9.2 Circuit breaker
+
+Optionally configured with a percentage. After trading at a price level, the engine compares it to the **previous trade price**; if the absolute move exceeds that percentage the book **halts automatically**.
+
+- The order that caused the breach finishes normally (including its remaining matches and stop activations); only later orders are rejected.
+- The last trade price is retained across halts and resume, and is part of saved state.
+- The first trade of a book (no reference yet) never trips the breaker.
+
+### 9.3 Instrument constraints
+
+An optional instrument definition validates every order and modification:
+
+- **Tick size**: prices (limit and stop) must be multiples.
+- **Lot size**: quantities must be multiples (for icebergs both the visible and hidden slices).
+- **Min / max quantity**: bounds on total quantity (total for icebergs).
+- **Min / max price**: price band for limit and stop prices.
+
+A zero field means "unchecked". Violations are rejected before touching the book. An inconsistent definition (negative or min > max) is refused at configuration.
+
+### 9.4 Precision limits
+
+Separate maximum decimal places can be set for quantity and price. Values with more decimal places are rejected.
+
+## 10. Persistence and Recovery
+
+### 10.1 Snapshot
+
+A complete, plain-data image of the engine: sequence, trade ID, last WAL position, halt flag, last trade price, every resting bid/ask in queue order, every dormant stop, and the pending OCO markers. Restoring clears the current state and loads the image (and recomputes the next expiry). Snapshots carry a version; unknown versions are refused. Order attributes needed to continue behaving identically (iceberg hidden remainder, trail settings, expiry, STP tag, creation time) are preserved.
+
+### 10.2 Write-ahead log (WAL)
+
+When a log is attached, every **state-changing command** (submit, replace, cancel, modify, modify-stop, expire, halt, resume) is written **before** it is applied, with a log sequence number and the clock reading at that moment. Rules:
+
+- Commands rejected by validation are not logged.
+- The book clock is **frozen to the logged time** while the command runs so live execution equals replay.
+- If the log write fails, the command is **not applied**, the error is latched and all further mutations are refused until the log is reattached/reset.
+- The built-in format is one JSON record per line, flushed to durable storage per record when the sink supports it; a torn last line (crash mid-write, command never applied) is ignored on read.
+
+### 10.3 Recovery
+
+State = latest snapshot + replay of log records after the snapshot's log position. Replay requires **consecutive** sequence numbers (gaps → error), feeds each record's time as the clock, re-applies commands in order, and does not write to the log. Commands that were rejected originally are rejected again, so replay reproduces exactly the original state. The book must be configured the same way (precision, instrument, breaker) as when the log was written.
+
+## 11. Events
+
+An optional emitter receives events as the book changes (sent synchronously, stamped with the current sequence):
+
+| Event         | When                                                                                                              |
+| ------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **trade**     | Every fill: trade ID, maker ID, taker ID, price, amount, sequence.                                                |
+| **volume**    | Aggregate volume at a price level changed (order added, filled, removed, reduced, STP decrement, iceberg refill). |
+| **canceled**  | An order was canceled for any reason.                                                                             |
+| **activated** | A stop order triggered.                                                                                           |
+| **bbo**       | Best bid or best ask changed after a command.                                                                     |
+| **depth**     | Emitted whenever a depth snapshot is requested.                                                                   |
+| **halt**      | Trading halted or resumed (flag whether the circuit breaker caused it).                                           |
+
+Delivery can be a channel with either backpressure (blocks when full) or drop-on-full.
+
+## 12. Concurrency Model
+
+The core engine is single-threaded by design (no locking overhead). A wrapper makes it safe for concurrent callers: every command takes an exclusive lock so each executes atomically and the overall outcome equals some sequential order (the WAL records exactly that order); pure reads share a read lock. Event emitters and the WAL run under the lock and must not call back into the book. Lookups return a copy of an order; objects passed in by the caller should not be read after submission except through lookup.
+
+## 13. Errors
+
+Rejections are explicit and leave the book unchanged:
+
+- invalid order / side / quantity / price / time-in-force; already-canceled order
+- duplicate order ID; order not found; wrong order kind for modify (limit vs stop)
+- quantity or price precision exceeded
+- instrument violations: tick, lot, quantity range, price band; invalid instrument definition
+- order already expired; invalid STP setting
+- trading halted
+- insufficient volume for a price estimate
+- WAL failure, WAL gap, invalid WAL record
+
+## 14. Data Structures and Complexity (logical view)
+
+- **Each side**: price → FIFO queue map plus a sorted list of active prices (best first). Insert/remove of a price level is a binary search plus array shift; best-price lookup is O(1); next-level is O(log n).
+- **Price level queue**: constant-time append, pop-front and (indexed) removal, with a cached aggregate volume so level volume is O(1).
+- **Order index**: ID → order for O(1) lookup, cancel and duplicate detection.
+- **Stop book**: stop price → FIFO queue plus ID index. Activation scans the stop price levels; trailing adjustment scans dormant trailing stops.
+- **FOK check**: walks levels from the best price until the quantity is covered or the limit is breached.
+- **Expiry**: purge scans resting orders, but only when the clock has passed the earliest known expiry.
