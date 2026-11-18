@@ -456,6 +456,41 @@ export default class Matchingo {
 		return this._halted;
 	}
 
+	/** Sequence of the last accepted order. */
+	get sequence() {
+		return this._seq;
+	}
+
+	/** Log sequence number of the last record logged or replayed. */
+	get walSeq() {
+		return this._lsn;
+	}
+
+	/** The latched WAL failure, or null. */
+	get walError() {
+		return this._walError;
+	}
+
+	/**
+	 * Halt trading when a trade moves the price by more than this percent
+	 * (0 turns the breaker off).
+	 * @param {number} percent
+	 */
+	setCircuitBreaker(percent) {
+		if (!(typeof percent === "number" && percent >= 0)) {
+			throw new Error("circuitBreaker must be a positive number");
+		}
+		this._breaker = percent;
+	}
+
+	/**
+	 * Turn event emission on or off.
+	 * @param {boolean} on
+	 */
+	setEmitter(on) {
+		this._emit = Boolean(on);
+	}
+
 	depth() {
 		const raw = this.orderBook.volume.getRaw()[this.symbol];
 		const side = (volume) =>
@@ -470,6 +505,10 @@ export default class Matchingo {
 		};
 		this._ev("depth", { depth });
 		return depth;
+	}
+
+	depthJSON() {
+		return JSON.stringify(this.depth());
 	}
 
 	bestBid() {

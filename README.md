@@ -297,6 +297,9 @@ Earlier trades of the same run stay valid. Decrement on a market-quote order act
 
 - `matchingo.order(id)` - a copy of the order, or `null`
 - `matchingo.depth()` - volume for each price: `{"BTC/USD":{"1":{"10.111":10},"2":{}}}` (`1` is **BUY**, `2` is **SELL**)
+- `matchingo.depthJSON()` - `depth()` as a JSON string
+- `matchingo.sequence` / `matchingo.walSeq` / `matchingo.walError` - last order sequence, last logged or replayed WAL record, and the latched WAL failure (or `null`)
+- `matchingo.setCircuitBreaker(percent)` / `matchingo.setEmitter(on)` - change the breaker (`0` turns it off) or event emission after construction
 - `matchingo.bestBid()` / `matchingo.bestAsk()` - `{ price, amount }` of the best level, or `null`
 - `matchingo.level(side, price)` - `{ price, amount }` resting at that price, or `null`
 - `matchingo.estimate(side, amount)` - the cost (BUY) or proceeds (SELL) of taking `amount` from the opposite side, level by level;

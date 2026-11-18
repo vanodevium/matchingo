@@ -177,3 +177,24 @@ test("FOK counts the hidden volume of resting icebergs", () => {
 	expect(done.processed).toBe(10);
 	expect(done.canceled).toEqual([]);
 });
+
+test("sequence, walSeq, walError and depthJSON", () => {
+	const book = new Matchingo(TestSymbol, TestScales);
+	expect(book.sequence).toBe(0);
+	book.submit(book.newLimitOrder(1, SELL, 10, 1));
+	expect(book.sequence).toBe(1);
+	expect(book.walSeq).toBe(0);
+	expect(book.walError).toBeNull();
+	expect(JSON.parse(book.depthJSON())).toEqual(book.depth());
+});
+
+test("setCircuitBreaker halts on a large move", () => {
+	const book = new Matchingo(TestSymbol, TestScales);
+	book.setCircuitBreaker(10);
+	book.submit(book.newLimitOrder(1, SELL, 10, 1));
+	book.submit(book.newLimitOrder(2, BUY, 10, 1));
+	book.submit(book.newLimitOrder(3, SELL, 20, 1));
+	book.submit(book.newLimitOrder(4, BUY, 20, 1));
+	expect(book.halted).toBe(true);
+	expect(() => book.setCircuitBreaker(-1)).toThrow();
+});
